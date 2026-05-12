@@ -1,0 +1,11 @@
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+*.nupkg
+*.snupkg
+artifacts/
+node_modules/
+dist/
+*.tgz
