@@ -48,6 +48,25 @@ public sealed class NonaProject
     public DateTime UpdatedAt { get; set; }
 }
 
+public sealed class NonaApiKey
+{
+    public long Id { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    public string Key { get; set; } = string.Empty;
+
+    public string Project { get; set; } = string.Empty;
+
+    public string? Environment { get; set; }
+
+    public string Scope { get; set; } = string.Empty;
+
+    public DateTime CreatedAt { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
+}
+
 public sealed class NonaEnvironment
 {
     public string Name { get; set; } = string.Empty;

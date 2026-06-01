@@ -48,6 +48,50 @@ test("login stores bearer token for admin calls", async () => {
   assert.equal(calls[1].headers.get("Authorization"), "Bearer jwt-token");
 });
 
+test("api key management methods send bearer token and serialize scope", async () => {
+  const calls = [];
+  const client = new NonaClient("https://nona.test", {
+    bearerToken: "jwt-token",
+    fetch: async (url, init) => {
+      calls.push(capture(url, init));
+
+      if (init?.method === "POST") {
+        return jsonResponse({
+          id: 7,
+          name: "Web Client",
+          key: "A".repeat(64),
+          project: "my-project",
+          environment: "production",
+          scope: "client",
+          createdAt: "2026-05-11T10:00:00Z",
+          updatedAt: "2026-05-11T10:00:00Z"
+        }, 201);
+      }
+
+      if (init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+
+      return jsonResponse([]);
+    }
+  });
+
+  await client.listApiKeys("my-project");
+  const created = await client.createApiKey("my-project", {
+    name: "Web Client",
+    environment: "production",
+    scope: "client"
+  });
+  await client.deleteApiKey("my-project", 7);
+
+  assert.equal(created.key.length, 64);
+  assert.equal(calls[0].url, "https://nona.test/admin/projects/my-project/api-keys");
+  assert.equal(calls[1].url, "https://nona.test/admin/projects/my-project/api-keys");
+  assert.equal(calls[2].url, "https://nona.test/admin/projects/my-project/api-keys/7");
+  assert.equal(calls[1].headers.get("Authorization"), "Bearer jwt-token");
+  assert.equal(JSON.parse(calls[1].body).environment, "production");
+});
+
 test("failed requests throw NonaClientError with backend error message", async () => {
   const client = new NonaClient("https://nona.test", {
     apiKey: "api-key",

@@ -226,6 +226,57 @@ public sealed class NonaClient : IDisposable
             cancellationToken);
     }
 
+    public Task<IReadOnlyList<NonaApiKey>> ListApiKeysAsync(
+        string projectId,
+        CancellationToken cancellationToken = default)
+    {
+        return SendAsync<IReadOnlyList<NonaApiKey>>(
+            HttpMethod.Get,
+            $"admin/projects/{Segment(projectId, nameof(projectId))}/api-keys",
+            body: null,
+            AuthMode.Bearer,
+            cancellationToken);
+    }
+
+    public Task<NonaApiKey> CreateApiKeyAsync(
+        string projectId,
+        string name,
+        string? environment = null,
+        string? scope = null,
+        CancellationToken cancellationToken = default)
+    {
+        return CreateApiKeyAsync(
+            projectId,
+            new NonaCreateApiKeyRequest(name, environment, scope),
+            cancellationToken);
+    }
+
+    public Task<NonaApiKey> CreateApiKeyAsync(
+        string projectId,
+        NonaCreateApiKeyRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return SendAsync<NonaApiKey>(
+            HttpMethod.Post,
+            $"admin/projects/{Segment(projectId, nameof(projectId))}/api-keys",
+            request,
+            AuthMode.Bearer,
+            cancellationToken);
+    }
+
+    public Task DeleteApiKeyAsync(
+        string projectId,
+        long apiKeyId,
+        CancellationToken cancellationToken = default)
+    {
+        return SendNoContentAsync(
+            HttpMethod.Delete,
+            $"admin/projects/{Segment(projectId, nameof(projectId))}/api-keys/{apiKeyId}",
+            body: null,
+            AuthMode.Bearer,
+            cancellationToken);
+    }
+
     public Task<NonaDashboardCounts> GetDashboardCountsAsync(CancellationToken cancellationToken = default)
     {
         return SendAsync<NonaDashboardCounts>(

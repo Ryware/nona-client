@@ -48,6 +48,26 @@ public sealed class NonaCreateEnvironmentRequest
     public string Name { get; set; } = string.Empty;
 }
 
+public sealed class NonaCreateApiKeyRequest
+{
+    public NonaCreateApiKeyRequest()
+    {
+    }
+
+    public NonaCreateApiKeyRequest(string name, string? environment = null, string? scope = null)
+    {
+        Name = name;
+        Environment = environment;
+        Scope = scope;
+    }
+
+    public string Name { get; set; } = string.Empty;
+
+    public string? Environment { get; set; }
+
+    public string? Scope { get; set; }
+}
+
 public sealed class NonaLoginRequest
 {
     public NonaLoginRequest()

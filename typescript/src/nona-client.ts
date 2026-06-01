@@ -1,9 +1,11 @@
 import { NonaClientError } from "./errors.js";
 import type {
   NonaAuditLog,
+  NonaApiKey,
   NonaClientOptions,
   NonaConfigEntry,
   NonaConfigValue,
+  NonaCreateApiKeyRequest,
   NonaCreateEnvironmentRequest,
   NonaCreateProjectRequest,
   NonaCreateUserRequest,
@@ -221,6 +223,44 @@ export class NonaClient {
       path: `admin/projects/${segment(projectId, "projectId")}/reroll-keys`,
       auth: "bearer",
       body,
+      ...options
+    });
+  }
+
+  public async listApiKeys(projectId: string, options: NonaRequestOptions = {}): Promise<NonaApiKey[]> {
+    return this.send<NonaApiKey[]>({
+      method: "GET",
+      path: `admin/projects/${segment(projectId, "projectId")}/api-keys`,
+      auth: "bearer",
+      ...options
+    });
+  }
+
+  public async createApiKey(
+    projectId: string,
+    request: string | NonaCreateApiKeyRequest,
+    options: NonaRequestOptions = {}
+  ): Promise<NonaApiKey> {
+    const body = typeof request === "string" ? { name: request } : request;
+
+    return this.send<NonaApiKey>({
+      method: "POST",
+      path: `admin/projects/${segment(projectId, "projectId")}/api-keys`,
+      auth: "bearer",
+      body,
+      ...options
+    });
+  }
+
+  public async deleteApiKey(
+    projectId: string,
+    apiKeyId: number,
+    options: NonaRequestOptions = {}
+  ): Promise<void> {
+    await this.sendNoContent({
+      method: "DELETE",
+      path: `admin/projects/${segment(projectId, "projectId")}/api-keys/${apiKeyId}`,
+      auth: "bearer",
       ...options
     });
   }

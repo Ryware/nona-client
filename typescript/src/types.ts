@@ -42,6 +42,17 @@ export interface NonaProject {
   updatedAt: string;
 }
 
+export interface NonaApiKey {
+  id: number;
+  name: string;
+  key: string;
+  project: string;
+  environment?: string | null;
+  scope: NonaConfigScope | string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface NonaEnvironment {
   name: string;
   project: string;
@@ -109,6 +120,12 @@ export interface NonaCreateProjectRequest {
 
 export interface NonaCreateEnvironmentRequest {
   name: string;
+}
+
+export interface NonaCreateApiKeyRequest {
+  name: string;
+  environment?: string | null;
+  scope?: NonaConfigScope | string;
 }
 
 export interface NonaLoginRequest {

@@ -257,6 +257,57 @@ public sealed class NonaClientTests
     }
 
     [Fact]
+    public async Task ApiKeyManagementMethods_SendBearerTokenAndSerializeScope()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            return request.Method.Method switch
+            {
+                "POST" => JsonResponse("""
+                    {
+                      "id": 7,
+                      "name": "Web Client",
+                      "key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                      "project": "my-project",
+                      "environment": "production",
+                      "scope": "client",
+                      "createdAt": "2026-05-11T10:00:00Z",
+                      "updatedAt": "2026-05-11T10:00:00Z"
+                    }
+                    """, HttpStatusCode.Created),
+                "DELETE" => NoContentResponse(),
+                _ => JsonResponse("[]")
+            };
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://nona.test/")
+        };
+
+        using var client = new NonaClient(httpClient, new NonaClientOptions
+        {
+            BearerToken = "jwt-token"
+        });
+
+        await client.ListApiKeysAsync("my-project");
+        var created = await client.CreateApiKeyAsync(
+            "my-project",
+            "Web Client",
+            "production",
+            NonaConfigScopes.Client);
+        await client.DeleteApiKeyAsync("my-project", 7);
+
+        Assert.Equal(64, created.Key.Length);
+        Assert.Equal("https://nona.test/admin/projects/my-project/api-keys", handler.Requests[0].Uri.AbsoluteUri);
+        Assert.Equal("https://nona.test/admin/projects/my-project/api-keys", handler.Requests[1].Uri.AbsoluteUri);
+        Assert.Equal("https://nona.test/admin/projects/my-project/api-keys/7", handler.Requests[2].Uri.AbsoluteUri);
+        Assert.All(handler.Requests, request => Assert.Equal("jwt-token", request.Authorization?.Parameter));
+        Assert.Contains("\"environment\":\"production\"", handler.Requests[1].Body);
+        Assert.Contains("\"scope\":\"client\"", handler.Requests[1].Body);
+    }
+
+    [Fact]
     public async Task FailedRequest_ThrowsNonaClientExceptionWithServerError()
     {
         var handler = new StubHttpMessageHandler(_ => JsonResponse(
