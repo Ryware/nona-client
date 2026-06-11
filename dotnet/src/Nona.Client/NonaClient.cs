@@ -3,7 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,7 +14,6 @@ public sealed class NonaClient : IDisposable
     private const string ApiKeyHeaderName = "X-Api-Key";
     private readonly HttpClient _httpClient;
     private readonly bool _disposeHttpClient;
-    private readonly JsonSerializerOptions _jsonOptions;
     private readonly NonaClientOptions _options;
 
     public NonaClient(string baseAddress, string? apiKey = null)
@@ -50,7 +49,6 @@ public sealed class NonaClient : IDisposable
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _disposeHttpClient = disposeHttpClient;
-        _jsonOptions = options.JsonSerializerOptions ?? CreateDefaultJsonOptions();
 
         if (_options.BaseAddress is not null)
         {
@@ -100,10 +98,16 @@ public sealed class NonaClient : IDisposable
     public async Task<T?> GetJsonValueAsync<T>(
         string environmentId,
         string key,
+        JsonTypeInfo<T> jsonTypeInfo,
         CancellationToken cancellationToken = default)
     {
+        if (jsonTypeInfo is null)
+        {
+            throw new ArgumentNullException(nameof(jsonTypeInfo));
+        }
+
         var configValue = await GetConfigValueAsync(environmentId, key, cancellationToken).ConfigureAwait(false);
-        return JsonSerializer.Deserialize<T>(configValue.Value, _jsonOptions);
+        return JsonSerializer.Deserialize(configValue.Value, jsonTypeInfo);
     }
 
     public void Dispose()
@@ -146,13 +150,12 @@ public sealed class NonaClient : IDisposable
 
         try
         {
-            var result = JsonSerializer.Deserialize<T>(responseBody!, _jsonOptions);
-            if (result is null)
+            if (typeof(T) == typeof(NonaConfigValue))
             {
-                throw new JsonException("The response JSON deserialized to null.");
+                return (T)(object)DeserializeConfigValue(responseBody!);
             }
 
-            return result;
+            throw new InvalidOperationException($"NonaClient cannot deserialize response type '{typeof(T).FullName}'.");
         }
         catch (JsonException ex)
         {
@@ -164,6 +167,33 @@ public sealed class NonaClient : IDisposable
                 responseBody,
                 ex);
         }
+    }
+
+    private static NonaConfigValue DeserializeConfigValue(string responseBody)
+    {
+        using var document = JsonDocument.Parse(responseBody);
+        var root = document.RootElement;
+
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException("The response JSON root must be an object.");
+        }
+
+        if (!root.TryGetProperty("value", out var valueProperty) || valueProperty.ValueKind != JsonValueKind.String)
+        {
+            throw new JsonException("The response JSON must include a string 'value' property.");
+        }
+
+        if (!root.TryGetProperty("contentType", out var contentTypeProperty) || contentTypeProperty.ValueKind != JsonValueKind.String)
+        {
+            throw new JsonException("The response JSON must include a string 'contentType' property.");
+        }
+
+        return new NonaConfigValue
+        {
+            Value = valueProperty.GetString() ?? string.Empty,
+            ContentType = contentTypeProperty.GetString() ?? string.Empty
+        };
     }
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)
@@ -268,15 +298,5 @@ public sealed class NonaClient : IDisposable
         return value.EndsWith("/", StringComparison.Ordinal)
             ? uri
             : new Uri(value + "/", UriKind.Absolute);
-    }
-
-    private static JsonSerializerOptions CreateDefaultJsonOptions()
-    {
-        return new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            PropertyNameCaseInsensitive = true,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-        };
     }
 }

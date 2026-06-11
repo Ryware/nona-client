@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json.Serialization;
 using Nona.Client;
 
 namespace Nona.Client.Tests;
@@ -92,7 +93,10 @@ public sealed class NonaClientTests
             ApiKey = "api-key"
         });
 
-        var value = await client.GetJsonValueAsync<JsonFlag>("production", "settings");
+        var value = await client.GetJsonValueAsync(
+            "production",
+            "settings",
+            NonaClientTestsJsonContext.Default.JsonFlag);
 
         Assert.NotNull(value);
         Assert.True(value.Enabled);
@@ -178,8 +182,14 @@ public sealed class NonaClientTests
         }
     }
 
-    private sealed class JsonFlag
+    internal sealed class JsonFlag
     {
         public bool Enabled { get; set; }
     }
+}
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(NonaClientTests.JsonFlag))]
+internal sealed partial class NonaClientTestsJsonContext : JsonSerializerContext
+{
 }
