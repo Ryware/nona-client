@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -15,6 +16,12 @@ public sealed class NonaClient : IDisposable
     private readonly HttpClient _httpClient;
     private readonly bool _disposeHttpClient;
     private readonly NonaClientOptions _options;
+    private readonly object _cacheLock = new object();
+    private readonly Dictionary<string, CacheEntry> _cache = new Dictionary<string, CacheEntry>(StringComparer.Ordinal);
+    private readonly TimeSpan _cacheTtl;
+    private readonly long _cacheMemoryLimitBytes;
+    private readonly bool _allowStaleCache;
+    private long _cacheSizeBytes;
 
     public NonaClient(string baseAddress, string? apiKey = null)
         : this(new NonaClientOptions
@@ -49,6 +56,9 @@ public sealed class NonaClient : IDisposable
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _disposeHttpClient = disposeHttpClient;
+        _cacheTtl = ValidateCacheTtl(options.CacheTtl);
+        _cacheMemoryLimitBytes = ConvertMegabytesToBytes(ValidateCacheMemoryLimitMegabytes(options.CacheMemoryLimitMegabytes));
+        _allowStaleCache = options.AllowStaleCache;
 
         if (_options.BaseAddress is not null)
         {
@@ -68,7 +78,16 @@ public sealed class NonaClient : IDisposable
         CancellationToken cancellationToken = default)
     {
         var path = $"api/{Segment(environmentId, nameof(environmentId))}/{Segment(key, nameof(key))}";
-        return await SendAsync<NonaConfigValue>(HttpMethod.Get, path, cancellationToken).ConfigureAwait(false);
+        var cacheKey = CreateCacheKey(environmentId, key);
+        var cachedValue = TryGetCachedValue(cacheKey, path);
+        if (cachedValue is not null)
+        {
+            return cachedValue;
+        }
+
+        var value = await FetchConfigValueAsync(path, cancellationToken).ConfigureAwait(false);
+        SetCachedValue(cacheKey, value);
+        return Clone(value);
     }
 
     public async Task<NonaConfigValue?> TryGetConfigValueAsync(
@@ -118,7 +137,14 @@ public sealed class NonaClient : IDisposable
         }
     }
 
-    private async Task<T> SendAsync<T>(
+    private async Task<NonaConfigValue> FetchConfigValueAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        return await SendAsync(HttpMethod.Get, path, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<NonaConfigValue> SendAsync(
         HttpMethod method,
         string path,
         CancellationToken cancellationToken)
@@ -150,12 +176,7 @@ public sealed class NonaClient : IDisposable
 
         try
         {
-            if (typeof(T) == typeof(NonaConfigValue))
-            {
-                return (T)(object)DeserializeConfigValue(responseBody!);
-            }
-
-            throw new InvalidOperationException($"NonaClient cannot deserialize response type '{typeof(T).FullName}'.");
+            return DeserializeConfigValue(responseBody!);
         }
         catch (JsonException ex)
         {
@@ -167,6 +188,131 @@ public sealed class NonaClient : IDisposable
                 responseBody,
                 ex);
         }
+    }
+
+    private NonaConfigValue? TryGetCachedValue(string cacheKey, string path)
+    {
+        lock (_cacheLock)
+        {
+            if (!_cache.TryGetValue(cacheKey, out var entry))
+            {
+                return null;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            if (entry.ExpiresAt > now)
+            {
+                entry.Touch();
+                return Clone(entry.Value);
+            }
+
+            if (_allowStaleCache)
+            {
+                entry.Touch();
+                QueueRefresh(cacheKey, path, entry);
+                return Clone(entry.Value);
+            }
+
+            RemoveCacheEntry(cacheKey);
+            return null;
+        }
+    }
+
+    private void QueueRefresh(string cacheKey, string path, CacheEntry entry)
+    {
+        if (entry.Refreshing)
+        {
+            return;
+        }
+
+        entry.Refreshing = true;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var value = await FetchConfigValueAsync(path, CancellationToken.None).ConfigureAwait(false);
+                SetCachedValue(cacheKey, value);
+            }
+            catch
+            {
+                lock (_cacheLock)
+                {
+                    if (_cache.TryGetValue(cacheKey, out var current))
+                    {
+                        current.Refreshing = false;
+                    }
+                }
+            }
+        });
+    }
+
+    private void SetCachedValue(string cacheKey, NonaConfigValue value)
+    {
+        var cachedValue = Clone(value);
+        var sizeBytes = EstimateCacheEntrySize(cacheKey, cachedValue);
+        if (sizeBytes > _cacheMemoryLimitBytes)
+        {
+            lock (_cacheLock)
+            {
+                RemoveCacheEntry(cacheKey);
+            }
+
+            return;
+        }
+
+        lock (_cacheLock)
+        {
+            RemoveCacheEntry(cacheKey);
+            _cache[cacheKey] = new CacheEntry(cachedValue, DateTimeOffset.UtcNow.Add(_cacheTtl), sizeBytes);
+            _cacheSizeBytes += sizeBytes;
+            CompactCache();
+        }
+    }
+
+    private void CompactCache()
+    {
+        if (_cacheSizeBytes <= _cacheMemoryLimitBytes)
+        {
+            return;
+        }
+
+        var oldestKeys = new List<string>(_cache.Count);
+        foreach (var item in _cache)
+        {
+            oldestKeys.Add(item.Key);
+        }
+
+        oldestKeys.Sort((left, right) => _cache[left].LastAccessed.CompareTo(_cache[right].LastAccessed));
+
+        foreach (var key in oldestKeys)
+        {
+            if (_cacheSizeBytes <= _cacheMemoryLimitBytes)
+            {
+                return;
+            }
+
+            RemoveCacheEntry(key);
+        }
+    }
+
+    private void RemoveCacheEntry(string cacheKey)
+    {
+        if (!_cache.TryGetValue(cacheKey, out var entry))
+        {
+            return;
+        }
+
+        _cache.Remove(cacheKey);
+        _cacheSizeBytes -= entry.SizeBytes;
+    }
+
+    private static NonaConfigValue Clone(NonaConfigValue value)
+    {
+        return new NonaConfigValue
+        {
+            Value = value.Value,
+            ContentType = value.ContentType
+        };
     }
 
     private static NonaConfigValue DeserializeConfigValue(string responseBody)
@@ -298,5 +444,71 @@ public sealed class NonaClient : IDisposable
         return value.EndsWith("/", StringComparison.Ordinal)
             ? uri
             : new Uri(value + "/", UriKind.Absolute);
+    }
+
+    private static string CreateCacheKey(string environmentId, string key)
+    {
+        return environmentId + "\u001F" + key;
+    }
+
+    private static long EstimateCacheEntrySize(string cacheKey, NonaConfigValue value)
+    {
+        return 128L + (cacheKey.Length + value.Value.Length + value.ContentType.Length) * sizeof(char);
+    }
+
+    private static TimeSpan ValidateCacheTtl(TimeSpan cacheTtl)
+    {
+        if (cacheTtl <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(cacheTtl), cacheTtl, "Cache TTL must be greater than zero.");
+        }
+
+        return cacheTtl;
+    }
+
+    private static long ValidateCacheMemoryLimitMegabytes(long cacheMemoryLimitMegabytes)
+    {
+        if (cacheMemoryLimitMegabytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(cacheMemoryLimitMegabytes), cacheMemoryLimitMegabytes, "Cache memory limit must be greater than zero.");
+        }
+
+        if (cacheMemoryLimitMegabytes > long.MaxValue / 1024 / 1024)
+        {
+            throw new ArgumentOutOfRangeException(nameof(cacheMemoryLimitMegabytes), cacheMemoryLimitMegabytes, "Cache memory limit is too large.");
+        }
+
+        return cacheMemoryLimitMegabytes;
+    }
+
+    private static long ConvertMegabytesToBytes(long megabytes)
+    {
+        return megabytes * 1024 * 1024;
+    }
+
+    private sealed class CacheEntry
+    {
+        public CacheEntry(NonaConfigValue value, DateTimeOffset expiresAt, long sizeBytes)
+        {
+            Value = value;
+            ExpiresAt = expiresAt;
+            SizeBytes = sizeBytes;
+            LastAccessed = DateTimeOffset.UtcNow;
+        }
+
+        public NonaConfigValue Value { get; }
+
+        public DateTimeOffset ExpiresAt { get; }
+
+        public long SizeBytes { get; }
+
+        public DateTimeOffset LastAccessed { get; private set; }
+
+        public bool Refreshing { get; set; }
+
+        public void Touch()
+        {
+            LastAccessed = DateTimeOffset.UtcNow;
+        }
     }
 }

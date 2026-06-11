@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json.Serialization;
 using Nona.Client;
@@ -77,6 +78,132 @@ public sealed class NonaClientTests
     }
 
     [Fact]
+    public async Task GetConfigValueAsync_ReturnsFreshCachedValueWithoutSecondRequest()
+    {
+        var requestCount = 0;
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return JsonResponse($$"""
+                {"value":"value-{{requestCount}}","contentType":"string"}
+                """);
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://nona.test/")
+        };
+
+        using var client = new NonaClient(httpClient, new NonaClientOptions
+        {
+            ApiKey = "api-key",
+            CacheTtl = TimeSpan.FromMinutes(1)
+        });
+
+        var first = await client.GetConfigValueAsync("production", "flag");
+        var second = await client.GetConfigValueAsync("production", "flag");
+
+        Assert.Equal("value-1", first.Value);
+        Assert.Equal("value-1", second.Value);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task GetConfigValueAsync_RefreshesExpiredCacheWhenStaleCacheIsDisabled()
+    {
+        var requestCount = 0;
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return JsonResponse($$"""
+                {"value":"value-{{requestCount}}","contentType":"string"}
+                """);
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://nona.test/")
+        };
+
+        using var client = new NonaClient(httpClient, new NonaClientOptions
+        {
+            ApiKey = "api-key",
+            CacheTtl = TimeSpan.FromMilliseconds(25)
+        });
+
+        Assert.Equal("value-1", (await client.GetConfigValueAsync("production", "flag")).Value);
+        await Task.Delay(80);
+
+        Assert.Equal("value-2", (await client.GetConfigValueAsync("production", "flag")).Value);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task GetConfigValueAsync_CanServeStaleCacheAndRefreshInBackground()
+    {
+        var requestCount = 0;
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return JsonResponse($$"""
+                {"value":"value-{{requestCount}}","contentType":"string"}
+                """);
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://nona.test/")
+        };
+
+        using var client = new NonaClient(httpClient, new NonaClientOptions
+        {
+            ApiKey = "api-key",
+            CacheTtl = TimeSpan.FromMilliseconds(25),
+            AllowStaleCache = true
+        });
+
+        Assert.Equal("value-1", (await client.GetConfigValueAsync("production", "flag")).Value);
+        await Task.Delay(80);
+
+        var stale = await client.GetConfigValueAsync("production", "flag");
+        Assert.Equal("value-1", stale.Value);
+
+        await WaitForAsync(() => handler.Requests.Count >= 2);
+        Assert.Equal("value-2", (await client.GetConfigValueAsync("production", "flag")).Value);
+    }
+
+    [Fact]
+    public async Task GetConfigValueAsync_EvictsLeastRecentlyUsedEntriesWhenMemoryLimitIsReached()
+    {
+        var largeValue = new string('x', 600_000);
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            var key = request.RequestUri?.Segments.Last().TrimEnd('/');
+            return JsonResponse($$"""
+                {"value":"{{key}}-{{largeValue}}","contentType":"string"}
+                """);
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://nona.test/")
+        };
+
+        using var client = new NonaClient(httpClient, new NonaClientOptions
+        {
+            ApiKey = "api-key",
+            CacheTtl = TimeSpan.FromMinutes(1),
+            CacheMemoryLimitMegabytes = 1
+        });
+
+        Assert.StartsWith("one-", (await client.GetConfigValueAsync("production", "one")).Value);
+        Assert.StartsWith("two-", (await client.GetConfigValueAsync("production", "two")).Value);
+        Assert.StartsWith("one-", (await client.GetConfigValueAsync("production", "one")).Value);
+
+        Assert.Equal(3, handler.Requests.Count);
+    }
+
+    [Fact]
     public async Task GetJsonValueAsync_DeserializesConfigValue()
     {
         var handler = new StubHttpMessageHandler(_ => JsonResponse("""
@@ -134,27 +261,48 @@ public sealed class NonaClientTests
         };
     }
 
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(10);
+        }
+
+        Assert.True(condition(), "Timed out waiting for condition.");
+    }
+
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _handle;
+        private readonly Func<HttpRequestMessage, Task<HttpResponseMessage>> _handle;
 
         public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handle)
+            : this(request => Task.FromResult(handle(request)))
+        {
+        }
+
+        public StubHttpMessageHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> handle)
         {
             _handle = handle;
         }
 
-        public List<CapturedRequest> Requests { get; } = new();
+        public ConcurrentQueue<CapturedRequest> Requests { get; } = new();
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var headers = request.Headers.ToDictionary(h => h.Key, h => h.Value.ToArray(), StringComparer.OrdinalIgnoreCase);
 
-            Requests.Add(new CapturedRequest(
+            Requests.Enqueue(new CapturedRequest(
                 request.Method,
                 request.RequestUri ?? throw new InvalidOperationException("Request URI was not set."),
                 headers));
 
-            return Task.FromResult(_handle(request));
+            return _handle(request);
         }
     }
 
