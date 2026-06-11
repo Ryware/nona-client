@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using Nona.Client;
 
 namespace Nona.Client.Tests;
@@ -35,57 +34,32 @@ public sealed class NonaClientTests
     }
 
     [Fact]
-    public async Task ListConfigEntriesAsync_SendsBearerTokenAndParsesEntries()
+    public async Task TryGetConfigValueAsync_ReturnsNullForNotFound()
     {
-        var handler = new StubHttpMessageHandler(_ => JsonResponse("""
-            [{
-              "project":"my-project",
-              "environment":"production",
-              "key":"Features:Checkout",
-              "value":"true",
-              "contentType":"boolean",
-              "scope":"all",
-              "createdAt":"2026-05-11T10:00:00Z",
-              "updatedAt":"2026-05-11T10:00:00Z"
-            }]
-            """));
+        var handler = new StubHttpMessageHandler(_ => JsonResponse(
+            """{"error":"Config entry not found"}""",
+            HttpStatusCode.NotFound));
 
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("https://nona.test")
+            BaseAddress = new Uri("https://nona.test/")
         };
 
         using var client = new NonaClient(httpClient, new NonaClientOptions
         {
-            BearerToken = "jwt-token"
+            ApiKey = "api-key"
         });
 
-        var entries = await client.ListConfigEntriesAsync("my-project", "production");
+        var value = await client.TryGetConfigValueAsync("production", "missing");
 
-        var entry = Assert.Single(entries);
-        Assert.Equal("Features:Checkout", entry.Key);
-        Assert.Equal("boolean", entry.ContentType);
-
-        var request = Assert.Single(handler.Requests);
-        Assert.Equal("https://nona.test/admin/projects/my-project/environments/production/config-entries", request.Uri.AbsoluteUri);
-        Assert.Equal("Bearer", request.Authorization?.Scheme);
-        Assert.Equal("jwt-token", request.Authorization?.Parameter);
+        Assert.Null(value);
     }
 
     [Fact]
-    public async Task UpsertConfigEntryAsync_SerializesCamelCaseBodyAndEscapesSegments()
+    public async Task GetStringValueAsync_ReturnsRawConfigValue()
     {
         var handler = new StubHttpMessageHandler(_ => JsonResponse("""
-            {
-              "project":"my-project",
-              "environment":"production",
-              "key":"Connection:Default",
-              "value":"{\"timeout\":10}",
-              "contentType":"json",
-              "scope":"server",
-              "createdAt":"2026-05-11T10:00:00Z",
-              "updatedAt":"2026-05-11T10:00:00Z"
-            }
+            {"value":"enabled","contentType":"string"}
             """));
 
         using var httpClient = new HttpClient(handler)
@@ -95,40 +69,17 @@ public sealed class NonaClientTests
 
         using var client = new NonaClient(httpClient, new NonaClientOptions
         {
-            BearerToken = "jwt-token"
+            ApiKey = "api-key"
         });
 
-        await client.UpsertConfigEntryAsync(
-            "my-project",
-            "production",
-            "Connection:Default",
-            "{\"timeout\":10}",
-            NonaContentTypes.Json,
-            NonaConfigScopes.Server);
-
-        var request = Assert.Single(handler.Requests);
-        Assert.Equal("https://nona.test/admin/projects/my-project/environments/production/config-entries/Connection%3ADefault", request.Uri.AbsoluteUri);
-        Assert.Contains("\"value\":\"{\\u0022timeout\\u0022:10}\"", request.Body);
-        Assert.Contains("\"contentType\":\"json\"", request.Body);
-        Assert.Contains("\"scope\":\"server\"", request.Body);
+        Assert.Equal("enabled", await client.GetStringValueAsync("production", "flag"));
     }
 
     [Fact]
-    public async Task CreateUserAsync_SerializesBodyAndParsesUser()
+    public async Task GetJsonValueAsync_DeserializesConfigValue()
     {
         var handler = new StubHttpMessageHandler(_ => JsonResponse("""
-            {
-              "id": 42,
-              "email": "editor@example.com",
-              "name": "Editor",
-              "role": "editor",
-              "scope": "client",
-              "isAdmin": false,
-              "projects": [{ "projectName": "my-project", "role": "viewer" }],
-              "createdAt": "2026-05-11T10:00:00Z",
-              "updatedAt": "2026-05-11T10:00:00Z",
-              "resetPasswordToken": "reset-token"
-            }
+            {"value":"{\"enabled\":true}","contentType":"json"}
             """));
 
         using var httpClient = new HttpClient(handler)
@@ -138,122 +89,13 @@ public sealed class NonaClientTests
 
         using var client = new NonaClient(httpClient, new NonaClientOptions
         {
-            BearerToken = "jwt-token"
+            ApiKey = "api-key"
         });
 
-        var user = await client.CreateUserAsync(
-            "Editor",
-            "editor@example.com",
-            NonaUserRoles.Editor,
-            NonaConfigScopes.Client);
+        var value = await client.GetJsonValueAsync<JsonFlag>("production", "settings");
 
-        Assert.Equal(42, user.Id);
-        Assert.Equal("editor@example.com", user.Email);
-        Assert.Equal("reset-token", user.ResetPasswordToken);
-        Assert.Equal("my-project", Assert.Single(user.Projects).ProjectName);
-
-        var request = Assert.Single(handler.Requests);
-        Assert.Equal(HttpMethod.Post, request.Method);
-        Assert.Equal("https://nona.test/admin/users", request.Uri.AbsoluteUri);
-        Assert.Contains("\"name\":\"Editor\"", request.Body);
-        Assert.Contains("\"email\":\"editor@example.com\"", request.Body);
-        Assert.Contains("\"role\":\"editor\"", request.Body);
-        Assert.Contains("\"scope\":\"client\"", request.Body);
-    }
-
-    [Fact]
-    public async Task SetProjectAccessAsync_EscapesProjectNameAndParsesAccess()
-    {
-        var handler = new StubHttpMessageHandler(_ => JsonResponse("""
-            { "projectName": "project:one", "role": "editor" }
-            """));
-
-        using var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://nona.test/")
-        };
-
-        using var client = new NonaClient(httpClient, new NonaClientOptions
-        {
-            BearerToken = "jwt-token"
-        });
-
-        var access = await client.SetProjectAccessAsync(7, "project:one", NonaUserRoles.Editor);
-
-        Assert.Equal("project:one", access.ProjectName);
-        Assert.Equal("editor", access.Role);
-
-        var request = Assert.Single(handler.Requests);
-        Assert.Equal(HttpMethod.Put, request.Method);
-        Assert.Equal("https://nona.test/admin/users/7/projects/project%3Aone", request.Uri.AbsoluteUri);
-        Assert.Contains("\"role\":\"editor\"", request.Body);
-    }
-
-    [Fact]
-    public async Task RequestPasswordResetAsync_HandlesNoContentResponse()
-    {
-        var handler = new StubHttpMessageHandler(_ => NoContentResponse());
-
-        using var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://nona.test/")
-        };
-
-        using var client = new NonaClient(httpClient);
-
-        await client.RequestPasswordResetAsync("user@example.com");
-
-        var request = Assert.Single(handler.Requests);
-        Assert.Equal(HttpMethod.Post, request.Method);
-        Assert.Equal("https://nona.test/auth/forgot-password", request.Uri.AbsoluteUri);
-        Assert.Contains("\"email\":\"user@example.com\"", request.Body);
-        Assert.Null(request.Authorization);
-    }
-
-    [Fact]
-    public async Task DashboardAndAuditLogMethods_SendBearerTokenAndParseResponses()
-    {
-        var handler = new StubHttpMessageHandler(request =>
-        {
-            return request.RequestUri?.AbsolutePath switch
-            {
-                "/admin/dashboard/counts" => JsonResponse("""
-                    { "users": 2, "projects": 3, "configEntries": 4 }
-                    """),
-                "/admin/audit-logs" => JsonResponse("""
-                    [{
-                      "id": 5,
-                      "actor": "admin@example.com",
-                      "actorIsSystem": false,
-                      "action": "Created Project",
-                      "target": "my-project",
-                      "project": "my-project",
-                      "environment": null,
-                      "createdAt": "2026-05-11T10:00:00Z"
-                    }]
-                    """),
-                _ => JsonResponse("""{"error":"not found"}""", HttpStatusCode.NotFound)
-            };
-        });
-
-        using var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://nona.test/")
-        };
-
-        using var client = new NonaClient(httpClient, new NonaClientOptions
-        {
-            BearerToken = "jwt-token"
-        });
-
-        var counts = await client.GetDashboardCountsAsync();
-        var logs = await client.ListAuditLogsAsync();
-
-        Assert.Equal(2, counts.Users);
-        Assert.Equal(3, counts.Projects);
-        Assert.Equal(4, counts.ConfigEntries);
-        Assert.Equal("Created Project", Assert.Single(logs).Action);
-        Assert.All(handler.Requests, request => Assert.Equal("jwt-token", request.Authorization?.Parameter));
+        Assert.NotNull(value);
+        Assert.True(value.Enabled);
     }
 
     [Fact]
@@ -288,11 +130,6 @@ public sealed class NonaClientTests
         };
     }
 
-    private static HttpResponseMessage NoContentResponse()
-    {
-        return new HttpResponseMessage(HttpStatusCode.NoContent);
-    }
-
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handle;
@@ -307,14 +144,11 @@ public sealed class NonaClientTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var headers = request.Headers.ToDictionary(h => h.Key, h => h.Value.ToArray(), StringComparer.OrdinalIgnoreCase);
-            var body = request.Content?.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult() ?? string.Empty;
 
             Requests.Add(new CapturedRequest(
                 request.Method,
                 request.RequestUri ?? throw new InvalidOperationException("Request URI was not set."),
-                request.Headers.Authorization,
-                headers,
-                body));
+                headers));
 
             return Task.FromResult(_handle(request));
         }
@@ -325,30 +159,27 @@ public sealed class NonaClientTests
         public CapturedRequest(
             HttpMethod method,
             Uri uri,
-            AuthenticationHeaderValue? authorization,
-            IReadOnlyDictionary<string, string[]> headers,
-            string body)
+            IReadOnlyDictionary<string, string[]> headers)
         {
             Method = method;
             Uri = uri;
-            Authorization = authorization;
             Headers = headers;
-            Body = body;
         }
 
         public HttpMethod Method { get; }
 
         public Uri Uri { get; }
 
-        public AuthenticationHeaderValue? Authorization { get; }
-
         public IReadOnlyDictionary<string, string[]> Headers { get; }
-
-        public string Body { get; }
 
         public string? GetHeader(string name)
         {
             return Headers.TryGetValue(name, out var values) ? values.SingleOrDefault() : null;
         }
+    }
+
+    private sealed class JsonFlag
+    {
+        public bool Enabled { get; set; }
     }
 }

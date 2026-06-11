@@ -10,7 +10,7 @@
     <Authors>Nona</Authors>
     <Company>Nona</Company>
     <Title>Nona Client</Title>
-    <Description>Typed .NET client for reading and administering Nona configuration instances.</Description>
+    <Description>Client for reading Nona configuration values.</Description>
     <PackageTags>nona;configuration;config;client;api</PackageTags>
     <RepositoryType>git</RepositoryType>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

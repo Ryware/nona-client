@@ -9,7 +9,5 @@ public sealed class NonaClientOptions
 
     public string? ApiKey { get; set; }
 
-    public string? BearerToken { get; set; }
-
     public JsonSerializerOptions? JsonSerializerOptions { get; set; }
 }

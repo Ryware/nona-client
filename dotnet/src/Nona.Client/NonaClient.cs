@@ -1,9 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -19,22 +17,20 @@ public sealed class NonaClient : IDisposable
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly NonaClientOptions _options;
 
-    public NonaClient(string baseAddress, string? apiKey = null, string? bearerToken = null)
+    public NonaClient(string baseAddress, string? apiKey = null)
         : this(new NonaClientOptions
         {
             BaseAddress = new Uri(baseAddress, UriKind.Absolute),
-            ApiKey = apiKey,
-            BearerToken = bearerToken
+            ApiKey = apiKey
         })
     {
     }
 
-    public NonaClient(Uri baseAddress, string? apiKey = null, string? bearerToken = null)
+    public NonaClient(Uri baseAddress, string? apiKey = null)
         : this(new NonaClientOptions
         {
             BaseAddress = baseAddress,
-            ApiKey = apiKey,
-            BearerToken = bearerToken
+            ApiKey = apiKey
         })
     {
     }
@@ -68,24 +64,13 @@ public sealed class NonaClient : IDisposable
         set => _options.ApiKey = value;
     }
 
-    public string? BearerToken
-    {
-        get => _options.BearerToken;
-        set => _options.BearerToken = value;
-    }
-
     public async Task<NonaConfigValue> GetConfigValueAsync(
         string environmentId,
         string key,
         CancellationToken cancellationToken = default)
     {
         var path = $"api/{Segment(environmentId, nameof(environmentId))}/{Segment(key, nameof(key))}";
-        return await SendAsync<NonaConfigValue>(
-            HttpMethod.Get,
-            path,
-            body: null,
-            AuthMode.ApiKey,
-            cancellationToken).ConfigureAwait(false);
+        return await SendAsync<NonaConfigValue>(HttpMethod.Get, path, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<NonaConfigValue?> TryGetConfigValueAsync(
@@ -121,374 +106,6 @@ public sealed class NonaClient : IDisposable
         return JsonSerializer.Deserialize<T>(configValue.Value, _jsonOptions);
     }
 
-    public async Task<NonaLoginResponse> LoginAsync(
-        string email,
-        string password,
-        bool storeToken = true,
-        CancellationToken cancellationToken = default)
-    {
-        var response = await SendAsync<NonaLoginResponse>(
-            HttpMethod.Post,
-            "auth/login",
-            new NonaLoginRequest(email, password),
-            AuthMode.None,
-            cancellationToken).ConfigureAwait(false);
-
-        if (storeToken)
-        {
-            BearerToken = response.Token;
-        }
-
-        return response;
-    }
-
-    public async Task<NonaRegisterResult> RegisterAsync(
-        string email,
-        string password,
-        bool storeToken = true,
-        CancellationToken cancellationToken = default)
-    {
-        var result = await SendAsync<NonaRegisterResult>(
-            HttpMethod.Post,
-            "auth/register",
-            new NonaLoginRequest(email, password),
-            AuthMode.None,
-            cancellationToken).ConfigureAwait(false);
-
-        if (storeToken && result.Response is not null)
-        {
-            BearerToken = result.Response.Token;
-        }
-
-        return result;
-    }
-
-    public Task<bool> AnyUsersExistAsync(CancellationToken cancellationToken = default)
-    {
-        return SendAsync<bool>(
-            HttpMethod.Get,
-            "auth/first-time",
-            body: null,
-            AuthMode.None,
-            cancellationToken);
-    }
-
-    public Task RequestPasswordResetAsync(string email, CancellationToken cancellationToken = default)
-    {
-        return SendNoContentAsync(
-            HttpMethod.Post,
-            "auth/forgot-password",
-            new NonaRequestPasswordResetRequest(email),
-            AuthMode.None,
-            cancellationToken);
-    }
-
-    public Task<IReadOnlyList<NonaProject>> ListProjectsAsync(CancellationToken cancellationToken = default)
-    {
-        return SendAsync<IReadOnlyList<NonaProject>>(
-            HttpMethod.Get,
-            "admin/projects",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<NonaProject> CreateProjectAsync(string name, CancellationToken cancellationToken = default)
-    {
-        return SendAsync<NonaProject>(
-            HttpMethod.Post,
-            "admin/projects",
-            new NonaCreateProjectRequest(name),
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task DeleteProjectAsync(string projectId, CancellationToken cancellationToken = default)
-    {
-        return SendNoContentAsync(
-            HttpMethod.Delete,
-            $"admin/projects/{Segment(projectId, nameof(projectId))}",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<NonaProject> RerollApiKeysAsync(
-        string projectId,
-        string keyType,
-        CancellationToken cancellationToken = default)
-    {
-        return SendAsync<NonaProject>(
-            HttpMethod.Post,
-            $"admin/projects/{Segment(projectId, nameof(projectId))}/reroll-keys",
-            new NonaRerollApiKeysRequest(keyType),
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<NonaDashboardCounts> GetDashboardCountsAsync(CancellationToken cancellationToken = default)
-    {
-        return SendAsync<NonaDashboardCounts>(
-            HttpMethod.Get,
-            "admin/dashboard/counts",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<IReadOnlyList<NonaAuditLog>> ListAuditLogsAsync(CancellationToken cancellationToken = default)
-    {
-        return SendAsync<IReadOnlyList<NonaAuditLog>>(
-            HttpMethod.Get,
-            "admin/audit-logs",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<IReadOnlyList<NonaUser>> ListUsersAsync(CancellationToken cancellationToken = default)
-    {
-        return SendAsync<IReadOnlyList<NonaUser>>(
-            HttpMethod.Get,
-            "admin/users",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<NonaUser> GetUserAsync(long id, CancellationToken cancellationToken = default)
-    {
-        return SendAsync<NonaUser>(
-            HttpMethod.Get,
-            $"admin/users/{id}",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<NonaUser> CreateUserAsync(
-        string name,
-        string email,
-        string? role = null,
-        string? scope = null,
-        CancellationToken cancellationToken = default)
-    {
-        return CreateUserAsync(
-            new NonaCreateUserRequest(name, email, role, scope),
-            cancellationToken);
-    }
-
-    public Task<NonaUser> CreateUserAsync(
-        NonaCreateUserRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        return SendAsync<NonaUser>(
-            HttpMethod.Post,
-            "admin/users",
-            request,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<NonaUser> UpdateUserAsync(
-        long id,
-        string name,
-        string? role = null,
-        string? scope = null,
-        CancellationToken cancellationToken = default)
-    {
-        return UpdateUserAsync(
-            id,
-            new NonaUpdateUserRequest(name, role, scope),
-            cancellationToken);
-    }
-
-    public Task<NonaUser> UpdateUserAsync(
-        long id,
-        NonaUpdateUserRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        return SendAsync<NonaUser>(
-            HttpMethod.Put,
-            $"admin/users/{id}",
-            request,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task DeleteUserAsync(long id, CancellationToken cancellationToken = default)
-    {
-        return SendNoContentAsync(
-            HttpMethod.Delete,
-            $"admin/users/{id}",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<IReadOnlyList<NonaProjectAccess>> GetUserProjectsAsync(
-        long id,
-        CancellationToken cancellationToken = default)
-    {
-        return SendAsync<IReadOnlyList<NonaProjectAccess>>(
-            HttpMethod.Get,
-            $"admin/users/{id}/projects",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<NonaProjectAccess> SetProjectAccessAsync(
-        long id,
-        string projectName,
-        string role,
-        CancellationToken cancellationToken = default)
-    {
-        return SetProjectAccessAsync(
-            id,
-            projectName,
-            new NonaProjectAccessRequest(role),
-            cancellationToken);
-    }
-
-    public Task<NonaProjectAccess> SetProjectAccessAsync(
-        long id,
-        string projectName,
-        NonaProjectAccessRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        return SendAsync<NonaProjectAccess>(
-            HttpMethod.Put,
-            $"admin/users/{id}/projects/{Segment(projectName, nameof(projectName))}",
-            request,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task RemoveProjectAccessAsync(
-        long id,
-        string projectName,
-        CancellationToken cancellationToken = default)
-    {
-        return SendNoContentAsync(
-            HttpMethod.Delete,
-            $"admin/users/{id}/projects/{Segment(projectName, nameof(projectName))}",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<IReadOnlyList<NonaEnvironment>> ListEnvironmentsAsync(
-        string projectId,
-        CancellationToken cancellationToken = default)
-    {
-        return SendAsync<IReadOnlyList<NonaEnvironment>>(
-            HttpMethod.Get,
-            $"admin/projects/{Segment(projectId, nameof(projectId))}/environments",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<NonaEnvironment> CreateEnvironmentAsync(
-        string projectId,
-        string name,
-        CancellationToken cancellationToken = default)
-    {
-        return SendAsync<NonaEnvironment>(
-            HttpMethod.Post,
-            $"admin/projects/{Segment(projectId, nameof(projectId))}/environments",
-            new NonaCreateEnvironmentRequest(name),
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task DeleteEnvironmentAsync(
-        string projectId,
-        string environmentId,
-        CancellationToken cancellationToken = default)
-    {
-        return SendNoContentAsync(
-            HttpMethod.Delete,
-            $"admin/projects/{Segment(projectId, nameof(projectId))}/environments/{Segment(environmentId, nameof(environmentId))}",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<IReadOnlyList<NonaConfigEntry>> ListConfigEntriesAsync(
-        string projectId,
-        string environmentName,
-        CancellationToken cancellationToken = default)
-    {
-        return SendAsync<IReadOnlyList<NonaConfigEntry>>(
-            HttpMethod.Get,
-            $"admin/projects/{Segment(projectId, nameof(projectId))}/environments/{Segment(environmentName, nameof(environmentName))}/config-entries",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<NonaConfigEntry> GetConfigEntryAsync(
-        string projectId,
-        string environmentName,
-        string key,
-        CancellationToken cancellationToken = default)
-    {
-        return SendAsync<NonaConfigEntry>(
-            HttpMethod.Get,
-            $"admin/projects/{Segment(projectId, nameof(projectId))}/environments/{Segment(environmentName, nameof(environmentName))}/config-entries/{Segment(key, nameof(key))}",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task<NonaConfigEntry> UpsertConfigEntryAsync(
-        string projectId,
-        string environmentName,
-        string key,
-        string value,
-        string? contentType = null,
-        string? scope = null,
-        CancellationToken cancellationToken = default)
-    {
-        return UpsertConfigEntryAsync(
-            projectId,
-            environmentName,
-            key,
-            new NonaUpsertConfigEntryRequest(value, contentType, scope),
-            cancellationToken);
-    }
-
-    public Task<NonaConfigEntry> UpsertConfigEntryAsync(
-        string projectId,
-        string environmentName,
-        string key,
-        NonaUpsertConfigEntryRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        return SendAsync<NonaConfigEntry>(
-            HttpMethod.Put,
-            $"admin/projects/{Segment(projectId, nameof(projectId))}/environments/{Segment(environmentName, nameof(environmentName))}/config-entries/{Segment(key, nameof(key))}",
-            request,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
-    public Task DeleteConfigEntryAsync(
-        string projectId,
-        string environmentName,
-        string key,
-        CancellationToken cancellationToken = default)
-    {
-        return SendNoContentAsync(
-            HttpMethod.Delete,
-            $"admin/projects/{Segment(projectId, nameof(projectId))}/environments/{Segment(environmentName, nameof(environmentName))}/config-entries/{Segment(key, nameof(key))}",
-            body: null,
-            AuthMode.Bearer,
-            cancellationToken);
-    }
-
     public void Dispose()
     {
         if (_disposeHttpClient)
@@ -500,11 +117,9 @@ public sealed class NonaClient : IDisposable
     private async Task<T> SendAsync<T>(
         HttpMethod method,
         string path,
-        object? body,
-        AuthMode authMode,
         CancellationToken cancellationToken)
     {
-        using var request = CreateRequest(method, path, body, authMode);
+        using var request = CreateRequest(method, path);
         using var response = await _httpClient.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
@@ -551,68 +166,22 @@ public sealed class NonaClient : IDisposable
         }
     }
 
-    private async Task SendNoContentAsync(
-        HttpMethod method,
-        string path,
-        object? body,
-        AuthMode authMode,
-        CancellationToken cancellationToken)
-    {
-        using var request = CreateRequest(method, path, body, authMode);
-        using var response = await _httpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            var responseBody = response.Content is null
-                ? null
-                : await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            ThrowResponseException(response, request, responseBody);
-        }
-    }
-
-    private HttpRequestMessage CreateRequest(HttpMethod method, string path, object? body, AuthMode authMode)
+    private HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
         var request = new HttpRequestMessage(method, BuildUri(path));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        ApplyAuthentication(request, authMode);
-
-        if (body is not null)
-        {
-            var json = JsonSerializer.Serialize(body, _jsonOptions);
-            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
-        }
-
+        ApplyApiKey(request);
         return request;
     }
 
-    private void ApplyAuthentication(HttpRequestMessage request, AuthMode authMode)
+    private void ApplyApiKey(HttpRequestMessage request)
     {
-        switch (authMode)
+        if (string.IsNullOrWhiteSpace(ApiKey))
         {
-            case AuthMode.None:
-                return;
-            case AuthMode.ApiKey:
-                if (string.IsNullOrWhiteSpace(ApiKey))
-                {
-                    throw new InvalidOperationException("Nona API-key calls require NonaClient.ApiKey.");
-                }
-
-                request.Headers.TryAddWithoutValidation(ApiKeyHeaderName, ApiKey);
-                return;
-            case AuthMode.Bearer:
-                if (string.IsNullOrWhiteSpace(BearerToken))
-                {
-                    throw new InvalidOperationException("Nona admin calls require NonaClient.BearerToken.");
-                }
-
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", BearerToken);
-                return;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(authMode), authMode, "Unknown authentication mode.");
+            throw new InvalidOperationException("Nona API calls require NonaClient.ApiKey.");
         }
+
+        request.Headers.TryAddWithoutValidation(ApiKeyHeaderName, ApiKey);
     }
 
     private Uri BuildUri(string path)
@@ -709,12 +278,5 @@ public sealed class NonaClient : IDisposable
             PropertyNameCaseInsensitive = true,
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
-    }
-
-    private enum AuthMode
-    {
-        None,
-        ApiKey,
-        Bearer
     }
 }
