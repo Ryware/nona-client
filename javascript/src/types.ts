@@ -9,6 +9,8 @@ export interface NonaClientOptions {
   bearerToken?: string;
   fetch?: typeof fetch;
   defaultHeaders?: HeadersInit;
+  cacheTtlMs?: number;
+  cacheMemoryLimitMegabytes?: number;
 }
 
 export interface NonaRequestOptions {

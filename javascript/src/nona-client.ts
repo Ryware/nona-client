@@ -1,11 +1,17 @@
+import { applyAuthentication } from "./auth.js";
 import { NonaClientError } from "./errors.js";
+import {
+  buildRequestKey,
+  ensureTrailingSlash,
+  segment,
+} from "./request-helpers.js";
+import { readJsonResponse } from "./response-helpers.js";
+import { TtlCache } from "./ttl-cache.js";
 import type {
   NonaClientOptions,
   NonaConfigValue,
   NonaRequestOptions,
 } from "./types.js";
-
-const API_KEY_HEADER_NAME = "X-Api-Key";
 
 interface SendOptions extends NonaRequestOptions {
   body?: unknown;
@@ -15,10 +21,28 @@ interface SendOptions extends NonaRequestOptions {
 
 export interface NonaClient {
   apiKey?: string;
-  getConfigValue(environmentId: string, key: string, options?: NonaRequestOptions): Promise<NonaConfigValue>;
-  tryGetConfigValue(environmentId: string, key: string, options?: NonaRequestOptions): Promise<NonaConfigValue | null>;
-  getStringValue(environmentId: string, key: string, options?: NonaRequestOptions): Promise<string>;
-  getJsonValue<T>(environmentId: string, key: string, options?: NonaRequestOptions): Promise<T>;
+  getConfigValue(
+    environmentId: string,
+    key: string,
+    options?: NonaRequestOptions,
+  ): Promise<NonaConfigValue>;
+  tryGetConfigValue(
+    environmentId: string,
+    key: string,
+    options?: NonaRequestOptions,
+  ): Promise<NonaConfigValue | null>;
+  getStringValue(
+    environmentId: string,
+    key: string,
+    options?: NonaRequestOptions,
+  ): Promise<string>;
+  getJsonValue<T>(
+    environmentId: string,
+    key: string,
+    options?: NonaRequestOptions,
+  ): Promise<T>;
+  invalidateTtlCache(environmentId: string, key: string): boolean;
+  clearTtlCache(): void;
 }
 
 export function createNonaClient(
@@ -38,6 +62,12 @@ export function createNonaClient(
   const baseUrl = ensureTrailingSlash(new URL(resolvedOptions.baseUrl));
   const defaultHeaders = resolvedOptions.defaultHeaders;
   const fetchImpl = resolvedOptions.fetch ?? globalThis.fetch?.bind(globalThis);
+
+  const cache = new TtlCache({
+    ttlMs: resolvedOptions.cacheTtlMs,
+    memoryLimitMegabytes: resolvedOptions.cacheMemoryLimitMegabytes,
+  });
+  const pendingRequests = new Map<string, Promise<NonaConfigValue>>();
   let apiKey = resolvedOptions.apiKey;
 
   if (!fetchImpl) {
@@ -46,34 +76,7 @@ export function createNonaClient(
 
   async function send<T>(request: SendOptions): Promise<T> {
     const response = await sendRequest(request);
-    const responseBody = await response.text();
-
-    if (!response.ok) {
-      throwResponseError(response, request.method, response.url, responseBody);
-    }
-
-    if (!responseBody.trim()) {
-      throw new NonaClientError(
-        "Nona returned an empty response body.",
-        response.status,
-        request.method,
-        response.url,
-        responseBody,
-      );
-    }
-
-    try {
-      return JSON.parse(responseBody) as T;
-    } catch (error) {
-      throw new NonaClientError(
-        "Nona returned a response that could not be deserialized.",
-        response.status,
-        request.method,
-        response.url,
-        responseBody,
-        error,
-      );
-    }
+    return readJsonResponse<T>(response, request.method, response.url);
   }
 
   async function sendRequest(request: SendOptions): Promise<Response> {
@@ -102,11 +105,45 @@ export function createNonaClient(
       key: string,
       requestOptions: NonaRequestOptions = {},
     ): Promise<NonaConfigValue> {
-      return send<NonaConfigValue>({
+      const request: SendOptions = {
         method: "GET",
         path: `api/${segment(environmentId, "environmentId")}/${segment(key, "key")}`,
         ...requestOptions,
-      });
+      };
+      const id = buildRequestKey(baseUrl, request.method, request.path, apiKey);
+
+      const cached = cache.getFresh(id);
+      if (cached) {
+        return cached;
+      }
+
+      const pending = pendingRequests.get(id);
+      if (pending) {
+        return pending;
+      }
+
+      const inFlight = send<NonaConfigValue>(request)
+        .then((response) => {
+          cache.set(id, response);
+          return response;
+        })
+        .finally(() => {
+          pendingRequests.delete(id);
+        });
+
+      pendingRequests.set(id, inFlight);
+      return inFlight;
+    },
+    invalidateTtlCache(environmentId: string, key: string): boolean {
+      const request: SendOptions = {
+        method: "GET",
+        path: `api/${segment(environmentId, "environmentId")}/${segment(key, "key")}`,
+      };
+      const id = buildRequestKey(baseUrl, request.method, request.path, apiKey);
+      return cache.invalidate(id);
+    },
+    clearTtlCache(): void {
+      cache.clear();
     },
     async tryGetConfigValue(
       environmentId: string,
@@ -128,7 +165,11 @@ export function createNonaClient(
       key: string,
       requestOptions: NonaRequestOptions = {},
     ): Promise<string> {
-      const configValue = await this.getConfigValue(environmentId, key, requestOptions);
+      const configValue = await this.getConfigValue(
+        environmentId,
+        key,
+        requestOptions,
+      );
       return configValue.value;
     },
     async getJsonValue<T>(
@@ -136,72 +177,12 @@ export function createNonaClient(
       key: string,
       requestOptions: NonaRequestOptions = {},
     ): Promise<T> {
-      const configValue = await this.getConfigValue(environmentId, key, requestOptions);
+      const configValue = await this.getConfigValue(
+        environmentId,
+        key,
+        requestOptions,
+      );
       return JSON.parse(configValue.value) as T;
     },
   };
-}
-
-function applyAuthentication(headers: Headers, apiKey?: string): void {
-  if (!apiKey?.trim()) {
-    throw new Error("Nona API-key calls require createNonaClient(...).apiKey.");
-  }
-
-  headers.set(API_KEY_HEADER_NAME, apiKey);
-  return;
-}
-
-function throwResponseError(
-  response: Response,
-  method: string,
-  url: string,
-  responseBody: string,
-): never {
-  const message =
-    readErrorMessage(responseBody) ??
-    `Nona request failed with HTTP ${response.status} (${response.statusText}).`;
-  throw new NonaClientError(
-    message,
-    response.status,
-    method,
-    url,
-    responseBody,
-  );
-}
-
-function readErrorMessage(responseBody: string): string | undefined {
-  if (!responseBody.trim()) {
-    return undefined;
-  }
-
-  try {
-    const parsed = JSON.parse(responseBody) as {
-      error?: unknown;
-      message?: unknown;
-    };
-    if (typeof parsed.error === "string") {
-      return parsed.error;
-    }
-
-    if (typeof parsed.message === "string") {
-      return parsed.message;
-    }
-  } catch {
-    return undefined;
-  }
-
-  return undefined;
-}
-
-function segment(value: string, parameterName: string): string {
-  if (!value?.trim()) {
-    throw new Error(`${parameterName} cannot be empty.`);
-  }
-
-  return encodeURIComponent(value);
-}
-
-function ensureTrailingSlash(url: URL): URL {
-  const value = url.toString();
-  return value.endsWith("/") ? url : new URL(`${value}/`);
 }
