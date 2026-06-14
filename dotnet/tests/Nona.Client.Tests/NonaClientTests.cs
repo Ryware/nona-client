@@ -109,6 +109,98 @@ public sealed class NonaClientTests
     }
 
     [Fact]
+    public async Task GetConfigValueAsync_DeduplicatesConcurrentRequestsForSameKey()
+    {
+        var releaseResponse = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requestCount = 0;
+        var handler = new StubHttpMessageHandler(async _ =>
+        {
+            Interlocked.Increment(ref requestCount);
+            await releaseResponse.Task;
+            return JsonResponse("""
+                {"value":"enabled","contentType":"string"}
+                """);
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://nona.test/")
+        };
+
+        using var client = new NonaClient(httpClient, new NonaClientOptions
+        {
+            ApiKey = "api-key",
+            CacheTtl = TimeSpan.FromMinutes(1)
+        });
+
+        var startRequests = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requests = Enumerable.Range(0, 10)
+            .Select(_ => Task.Run(async () =>
+            {
+                await startRequests.Task;
+                return await client.GetConfigValueAsync("production", "flag");
+            }))
+            .ToArray();
+
+        startRequests.SetResult(true);
+        await WaitForAsync(() => Volatile.Read(ref requestCount) == 1);
+        await Task.Delay(50);
+
+        Assert.Equal(1, Volatile.Read(ref requestCount));
+
+        releaseResponse.SetResult(true);
+        var values = await Task.WhenAll(requests);
+
+        Assert.All(values, value =>
+        {
+            Assert.Equal("enabled", value.Value);
+            Assert.Equal("string", value.ContentType);
+        });
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task GetConfigValueAsync_DoesNotDeduplicateDifferentKeys()
+    {
+        var releaseResponses = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = new StubHttpMessageHandler(async request =>
+        {
+            await releaseResponses.Task;
+
+            var key = request.RequestUri?.Segments.Last().TrimEnd('/');
+            return JsonResponse($$"""
+                {"value":"{{key}}","contentType":"string"}
+                """);
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://nona.test/")
+        };
+
+        using var client = new NonaClient(httpClient, new NonaClientOptions
+        {
+            ApiKey = "api-key",
+            CacheTtl = TimeSpan.FromMinutes(1)
+        });
+
+        var requests = new[]
+        {
+            client.GetConfigValueAsync("production", "one"),
+            client.GetConfigValueAsync("production", "two"),
+            client.GetConfigValueAsync("production", "three")
+        };
+
+        await WaitForAsync(() => handler.Requests.Count == 3);
+        releaseResponses.SetResult(true);
+
+        var values = await Task.WhenAll(requests);
+
+        Assert.Equal(new[] { "one", "two", "three" }, values.Select(value => value.Value).ToArray());
+        Assert.Equal(3, handler.Requests.Count);
+    }
+
+    [Fact]
     public async Task GetConfigValueAsync_RefreshesExpiredCacheWhenStaleCacheIsDisabled()
     {
         var requestCount = 0;
