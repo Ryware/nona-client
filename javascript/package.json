@@ -1,6 +1,6 @@
 {
   "name": "@ryware/nona-client",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Typed TypeScript client for reading and administering Nona configuration instances.",
   "type": "module",
   "main": "./dist/index.js",
