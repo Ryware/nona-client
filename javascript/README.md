@@ -1,4 +1,4 @@
-# @ryware/nona-client
+# nona-client
 
 JavaScript client for reading Nona configuration values.
 
@@ -7,7 +7,7 @@ Official website: https://nonaconfig.com/
 ## Install
 
 ```bash
-npm install @ryware/nona-client
+npm install nona-client
 ```
 
 ## Import
@@ -15,7 +15,7 @@ npm install @ryware/nona-client
 This package is ESM-only, so use `import`:
 
 ```js
-import { createNonaClient, NonaClientError } from "@ryware/nona-client";
+import { createNonaClient, NonaClientError } from "nona-client";
 ```
 
 ## Create a client
