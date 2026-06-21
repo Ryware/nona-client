@@ -11,12 +11,6 @@ export const NonaConfigScopes = {
   All: "all"
 } as const;
 
-export const NonaApiKeyTypes = {
-  Server: "server",
-  Client: "client",
-  Both: "both"
-} as const;
-
 export const NonaUserRoles = {
   Viewer: "viewer",
   Editor: "editor"

@@ -1,6 +1,5 @@
 export type NonaContentType = "string" | "number" | "boolean" | "json";
 export type NonaConfigScope = "client" | "server" | "all";
-export type NonaApiKeyType = "server" | "client" | "both";
 export type NonaUserRole = "viewer" | "editor";
 
 export interface NonaClientOptions {

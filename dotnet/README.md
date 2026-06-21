@@ -23,6 +23,8 @@ var value = await client.GetConfigValueAsync("production", "Features:Checkout");
 Console.WriteLine(value.Value);
 ```
 
+API keys are bound to one project, so config reads only take an environment and key.
+
 ## Available Methods
 
 - `GetConfigValueAsync(environmentId, key, cancellationToken)`

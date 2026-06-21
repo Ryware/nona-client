@@ -37,6 +37,8 @@ const nona = createNonaClient("https://nona.example.com", {
 
 ## Read config values
 
+API keys are bound to one project, so config reads only take an environment and key.
+
 ```js
 const value = await nona.getConfigValue("production", "Features:Checkout");
 console.log(value.value);
