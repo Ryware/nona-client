@@ -9,3 +9,4 @@ artifacts/
 node_modules/
 dist/
 *.tgz
+/dotnet/.vs/
