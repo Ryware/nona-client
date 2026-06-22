@@ -10,7 +10,7 @@ public sealed class NonaClientTests
     [Fact]
     public async Task GetConfigValueAsync_SendsApiKeyAndParsesValue()
     {
-        var handler = new StubHttpMessageHandler(_ => ConfigValueResponse("enabled", "string"));
+        var handler = new StubHttpMessageHandler(_ => RawEntryValueResponse("enabled", "text"));
 
         using var httpClient = new HttpClient(handler)
         {
@@ -25,7 +25,7 @@ public sealed class NonaClientTests
         var value = await client.GetConfigValueAsync("production", "Features:Checkout");
 
         Assert.Equal("enabled", value.Value);
-        Assert.Equal("string", value.ContentType);
+        Assert.Equal("text", value.ContentType);
 
         var request = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Get, request.Method);
@@ -58,7 +58,7 @@ public sealed class NonaClientTests
     [Fact]
     public async Task GetStringValueAsync_ReturnsRawConfigValue()
     {
-        var handler = new StubHttpMessageHandler(_ => ConfigValueResponse("enabled", "string"));
+        var handler = new StubHttpMessageHandler(_ => RawEntryValueResponse("enabled", "text"));
 
         using var httpClient = new HttpClient(handler)
         {
@@ -80,7 +80,7 @@ public sealed class NonaClientTests
         var handler = new StubHttpMessageHandler(_ =>
         {
             requestCount++;
-            return ConfigValueResponse($"value-{requestCount}", "string");
+            return RawEntryValueResponse($"value-{requestCount}", "text");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -111,7 +111,7 @@ public sealed class NonaClientTests
         {
             Interlocked.Increment(ref requestCount);
             await releaseResponse.Task;
-            return ConfigValueResponse("enabled", "string");
+            return RawEntryValueResponse("enabled", "text");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -146,7 +146,7 @@ public sealed class NonaClientTests
         Assert.All(values, value =>
         {
             Assert.Equal("enabled", value.Value);
-            Assert.Equal("string", value.ContentType);
+            Assert.Equal("text", value.ContentType);
         });
         Assert.Single(handler.Requests);
     }
@@ -160,7 +160,7 @@ public sealed class NonaClientTests
             await releaseResponses.Task;
 
             var key = request.RequestUri?.Segments.Last().TrimEnd('/');
-            return ConfigValueResponse(key ?? string.Empty, "string");
+            return RawEntryValueResponse(key ?? string.Empty, "text");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -197,7 +197,7 @@ public sealed class NonaClientTests
         var handler = new StubHttpMessageHandler(_ =>
         {
             requestCount++;
-            return ConfigValueResponse($"value-{requestCount}", "string");
+            return RawEntryValueResponse($"value-{requestCount}", "text");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -225,7 +225,7 @@ public sealed class NonaClientTests
         var handler = new StubHttpMessageHandler(_ =>
         {
             requestCount++;
-            return ConfigValueResponse($"value-{requestCount}", "string");
+            return RawEntryValueResponse($"value-{requestCount}", "text");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -257,7 +257,7 @@ public sealed class NonaClientTests
         var handler = new StubHttpMessageHandler(request =>
         {
             var key = request.RequestUri?.Segments.Last().TrimEnd('/');
-            return ConfigValueResponse($"{key}-{largeValue}", "string");
+            return RawEntryValueResponse($"{key}-{largeValue}", "text");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -282,7 +282,7 @@ public sealed class NonaClientTests
     [Fact]
     public async Task GetJsonValueAsync_DeserializesConfigValue()
     {
-        var handler = new StubHttpMessageHandler(_ => ConfigValueResponse("""{"enabled":true}""", "json"));
+        var handler = new StubHttpMessageHandler(_ => RawEntryValueResponse("""{"enabled":true}""", "json"));
 
         using var httpClient = new HttpClient(handler)
         {
@@ -307,7 +307,7 @@ public sealed class NonaClientTests
     public async Task GetConfigValueAsync_CanReadLegacyJsonResponse()
     {
         var handler = new StubHttpMessageHandler(_ => JsonResponse("""
-            {"value":"enabled","contentType":"string"}
+            {"value":"enabled","contentType":"text"}
             """));
 
         using var httpClient = new HttpClient(handler)
@@ -323,13 +323,13 @@ public sealed class NonaClientTests
         var value = await client.GetConfigValueAsync("production", "flag");
 
         Assert.Equal("enabled", value.Value);
-        Assert.Equal("string", value.ContentType);
+        Assert.Equal("text", value.ContentType);
     }
 
     [Fact]
     public async Task GetConfigValueAsync_AllowsEmptyRawValue()
     {
-        var handler = new StubHttpMessageHandler(_ => ConfigValueResponse(string.Empty, "string"));
+        var handler = new StubHttpMessageHandler(_ => RawEntryValueResponse(string.Empty, "text"));
 
         using var httpClient = new HttpClient(handler)
         {
@@ -344,7 +344,7 @@ public sealed class NonaClientTests
         var value = await client.GetConfigValueAsync("production", "empty");
 
         Assert.Equal(string.Empty, value.Value);
-        Assert.Equal("string", value.ContentType);
+        Assert.Equal("text", value.ContentType);
     }
 
     [Fact]
@@ -379,13 +379,13 @@ public sealed class NonaClientTests
         };
     }
 
-    private static HttpResponseMessage ConfigValueResponse(string value, string contentType, HttpStatusCode statusCode = HttpStatusCode.OK)
+    private static HttpResponseMessage RawEntryValueResponse(string value, string contentType, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
         var response = new HttpResponseMessage(statusCode)
         {
             Content = new StringContent(value, System.Text.Encoding.UTF8, "text/plain")
         };
-        response.Headers.TryAddWithoutValidation("ContentType", contentType);
+        response.Headers.TryAddWithoutValidation("X-Nona-Content-Type", contentType);
         return response;
     }
 

@@ -1,4 +1,4 @@
-export type NonaContentType = "string" | "number" | "boolean" | "json";
+export type NonaContentType = "text" | "number" | "boolean" | "json";
 export type NonaConfigScope = "client" | "server" | "all";
 export type NonaUserRole = "viewer" | "editor";
 

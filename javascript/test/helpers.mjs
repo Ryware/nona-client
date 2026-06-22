@@ -72,12 +72,12 @@ export function jsonResponse(body, status = 200) {
   });
 }
 
-export function configValueResponse(value, contentType = "string", status = 200) {
+export function configValueResponse(value, contentType = "text", status = 200) {
   return new Response(value, {
     status,
     headers: {
-      "Content-Type": "text/plain",
-      "ContentType": contentType
+      "Content-Type": "application/json",
+      "X-Nona-Content-Type": contentType
     }
   });
 }

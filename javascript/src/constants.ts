@@ -1,5 +1,6 @@
 export const NonaContentTypes = {
-  String: "string",
+  Text: "text",
+  String: "text",
   Number: "number",
   Boolean: "boolean",
   Json: "json"

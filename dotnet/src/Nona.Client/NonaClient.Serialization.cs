@@ -27,7 +27,7 @@ public sealed partial class NonaClient
         return new NonaConfigValue
         {
             Value = valueProperty.GetString() ?? string.Empty,
-            ContentType = contentTypeProperty.GetString() ?? string.Empty
+            ContentType = NormalizeContentType(contentTypeProperty.GetString() ?? string.Empty)
         };
     }
 }

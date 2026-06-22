@@ -11,7 +11,8 @@ namespace Nona.Client;
 public sealed partial class NonaClient
 {
     private const string ApiKeyHeaderName = "X-Api-Key";
-    private const string ContentTypeHeaderName = "ContentType";
+    private const string ContentTypeHeaderName = "X-Nona-Content-Type";
+    private const string LegacyContentTypeHeaderName = "ContentType";
 
     private async Task<NonaConfigValue> FetchConfigValueAsync(
         string path,
@@ -40,13 +41,14 @@ public sealed partial class NonaClient
             ThrowResponseException(response, request, responseBody);
         }
 
-        var contentType = TryGetHeaderValue(response, ContentTypeHeaderName);
+        var contentType = TryGetHeaderValue(response, ContentTypeHeaderName)
+            ?? TryGetHeaderValue(response, LegacyContentTypeHeaderName);
         if (!string.IsNullOrWhiteSpace(contentType))
         {
             return new NonaConfigValue
             {
                 Value = responseBody ?? string.Empty,
-                ContentType = contentType!
+                ContentType = NormalizeContentType(contentType!)
             };
         }
 
@@ -56,31 +58,27 @@ public sealed partial class NonaClient
             {
                 return DeserializeConfigValue(responseBody!);
             }
-            catch (JsonException ex)
+            catch (JsonException)
             {
-                throw new NonaClientException(
-                    "Nona returned a response that could not be deserialized.",
-                    response.StatusCode,
-                    method.Method,
-                    request.RequestUri,
-                    responseBody,
-                    ex);
+                return new NonaConfigValue
+                {
+                    Value = responseBody!,
+                    ContentType = InferContentType(responseBody!)
+                };
             }
         }
 
-        throw new NonaClientException(
-            $"Nona returned a successful response without a '{ContentTypeHeaderName}' header.",
-            response.StatusCode,
-            method.Method,
-            request.RequestUri,
-            responseBody);
+        return new NonaConfigValue
+        {
+            Value = string.Empty,
+            ContentType = NonaContentTypes.Text
+        };
     }
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
         var request = new HttpRequestMessage(method, BuildUri(path));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/plain"));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json", 0.5));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         ApplyApiKey(request);
         return request;
     }
@@ -98,6 +96,37 @@ public sealed partial class NonaClient
         }
 
         return null;
+    }
+
+    private static string NormalizeContentType(string contentType)
+    {
+        return contentType.Trim().ToLowerInvariant() switch
+        {
+            "json" or "application/json" or "text/json" => NonaContentTypes.Json,
+            "number" or "integer" or "float" or "double" or "decimal" => NonaContentTypes.Number,
+            "boolean" or "bool" => NonaContentTypes.Boolean,
+            "text" or "string" or "plain" or "text/plain" => NonaContentTypes.Text,
+            _ => contentType
+        };
+    }
+
+    private static string InferContentType(string value)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            return document.RootElement.ValueKind switch
+            {
+                JsonValueKind.True or JsonValueKind.False => NonaContentTypes.Boolean,
+                JsonValueKind.Number => NonaContentTypes.Number,
+                JsonValueKind.Object or JsonValueKind.Array or JsonValueKind.Null => NonaContentTypes.Json,
+                _ => NonaContentTypes.Text
+            };
+        }
+        catch (JsonException)
+        {
+            return NonaContentTypes.Text;
+        }
     }
 
     private void ApplyApiKey(HttpRequestMessage request)
