@@ -9,7 +9,7 @@ test("ttl cache is disabled by default", async () => {
     apiKey: "api-key",
     fetch: async () => {
       calls += 1;
-      return configValueResponse("v1", "string");
+      return configValueResponse("v1", "text");
     }
   });
 
@@ -26,7 +26,7 @@ test("ttl cache hit returns from memory when enabled", async () => {
     cacheTtlMs: 5000,
     fetch: async () => {
       calls += 1;
-      return configValueResponse("v1", "string");
+      return configValueResponse("v1", "text");
     }
   });
 
@@ -43,7 +43,7 @@ test("expired ttl cache performs a new network request", async () => {
     cacheTtlMs: 5,
     fetch: async () => {
       calls += 1;
-      return configValueResponse(`v${calls}`, "string");
+      return configValueResponse(`v${calls}`, "text");
     }
   });
 
@@ -63,7 +63,7 @@ test("targeted cache invalidation removes only matching entry", async () => {
     cacheTtlMs: 5000,
     fetch: async (url) => {
       calls += 1;
-      return configValueResponse(String(url), "string");
+      return configValueResponse(String(url), "text");
     }
   });
 
@@ -87,7 +87,7 @@ test("clear cache removes all ttl entries", async () => {
     cacheTtlMs: 5000,
     fetch: async (url) => {
       calls += 1;
-      return configValueResponse(String(url), "string");
+      return configValueResponse(String(url), "text");
     }
   });
 

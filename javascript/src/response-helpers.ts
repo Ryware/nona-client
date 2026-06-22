@@ -1,9 +1,10 @@
 import { NonaClientError } from "./errors.js";
 import type { NonaConfigValue } from "./types.js";
 
-const contentTypeHeaderName = "ContentType";
+const contentTypeHeaderName = "X-Nona-Content-Type";
+const legacyContentTypeHeaderName = "ContentType";
 
-export async function readConfigValueResponse(
+export async function readRawEntryValueResponse(
   response: Response,
   method: string,
   url: string,
@@ -14,36 +15,31 @@ export async function readConfigValueResponse(
     throwResponseError(response, method, url, responseBody);
   }
 
-  const contentType = response.headers.get(contentTypeHeaderName);
+  const contentType =
+    response.headers.get(contentTypeHeaderName) ??
+    response.headers.get(legacyContentTypeHeaderName);
   if (contentType) {
     return {
       value: responseBody,
-      contentType,
+      contentType: normalizeContentType(contentType),
     };
   }
 
   if (responseBody.trim()) {
     try {
       return parseLegacyConfigValue(responseBody);
-    } catch (error) {
-      throw new NonaClientError(
-        "Nona returned a response that could not be deserialized.",
-        response.status,
-        method,
-        url,
-        responseBody,
-        error,
-      );
+    } catch {
+      return {
+        value: responseBody,
+        contentType: inferContentType(responseBody),
+      };
     }
   }
 
-  throw new NonaClientError(
-    `Nona returned a successful response without a '${contentTypeHeaderName}' header.`,
-    response.status,
-    method,
-    url,
-    responseBody,
-  );
+  return {
+    value: "",
+    contentType: "text",
+  };
 }
 
 export async function readJsonResponse<T>(
@@ -141,6 +137,53 @@ function parseLegacyConfigValue(responseBody: string): NonaConfigValue {
 
   return {
     value: parsed.value,
-    contentType: parsed.contentType,
+    contentType: normalizeContentType(parsed.contentType),
   };
+}
+
+function normalizeContentType(contentType: string): string {
+  switch (contentType.trim().toLowerCase()) {
+    case "json":
+    case "application/json":
+    case "text/json":
+      return "json";
+    case "number":
+    case "integer":
+    case "float":
+    case "double":
+    case "decimal":
+      return "number";
+    case "boolean":
+    case "bool":
+      return "boolean";
+    case "text":
+    case "string":
+    case "plain":
+    case "text/plain":
+      return "text";
+    default:
+      return contentType;
+  }
+}
+
+function inferContentType(value: string): string {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    if (typeof parsed === "boolean") {
+      return "boolean";
+    }
+
+    if (typeof parsed === "number") {
+      return "number";
+    }
+
+    if (parsed === null || Array.isArray(parsed) || typeof parsed === "object") {
+      return "json";
+    }
+  } catch {
+    return "text";
+  }
+
+  return "text";
 }

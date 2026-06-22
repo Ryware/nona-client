@@ -5,7 +5,7 @@ import {
   ensureTrailingSlash,
   segment,
 } from "./request-helpers.js";
-import { readConfigValueResponse } from "./response-helpers.js";
+import { readRawEntryValueResponse } from "./response-helpers.js";
 import { TtlCache } from "./ttl-cache.js";
 import type {
   NonaClientOptions,
@@ -76,13 +76,13 @@ export function createNonaClient(
 
   async function sendConfigValue(request: SendOptions): Promise<NonaConfigValue> {
     const response = await sendRequest(request);
-    return readConfigValueResponse(response, request.method, response.url);
+    return readRawEntryValueResponse(response, request.method, response.url);
   }
 
   async function sendRequest(request: SendOptions): Promise<Response> {
     const url = new URL(request.path.replace(/^\/+/, ""), baseUrl).toString();
     const headers = new Headers(defaultHeaders);
-    headers.set("Accept", "text/plain, application/json;q=0.5");
+    headers.set("Accept", "application/json");
     applyAuthentication(headers, apiKey);
 
     let body: string | undefined;

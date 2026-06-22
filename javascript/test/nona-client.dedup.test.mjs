@@ -20,7 +20,7 @@ test("three concurrent identical requests deduplicate to one HTTP call", async (
 
   assert.equal(calls, 1);
 
-  pending.resolve(configValueResponse("v1", "string"));
+  pending.resolve(configValueResponse("v1", "text"));
 
   const [ra, rb, rc] = await Promise.all([a, b, c]);
   assert.equal(ra.value, "v1");
@@ -34,7 +34,7 @@ test("three concurrent different requests result in three HTTP calls", async () 
     apiKey: "api-key",
     fetch: async (url) => {
       calls += 1;
-      return configValueResponse(String(url), "string");
+      return configValueResponse(String(url), "text");
     }
   });
 
@@ -83,7 +83,7 @@ test("failed request cleanup allows subsequent retries", async () => {
         return jsonResponse({ error: "boom" }, 500);
       }
 
-      return configValueResponse("ok", "string");
+      return configValueResponse("ok", "text");
     }
   });
 

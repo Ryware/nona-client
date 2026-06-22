@@ -9,14 +9,14 @@ test("getConfigValue sends API key and parses the value", async () => {
     apiKey: "api-key",
     fetch: async (url, init) => {
       calls.push(capture(url, init));
-      return configValueResponse("enabled", "string");
+      return configValueResponse("enabled", "text");
     }
   });
 
   const value = await client.getConfigValue("production", "Features:Checkout");
 
   assert.equal(value.value, "enabled");
-  assert.equal(value.contentType, "string");
+  assert.equal(value.contentType, "text");
   assert.equal(calls[0].url, "https://nona.test/api/production/Features%3ACheckout");
   assert.equal(calls[0].headers.get("X-Api-Key"), "api-key");
 });
@@ -24,25 +24,25 @@ test("getConfigValue sends API key and parses the value", async () => {
 test("getConfigValue accepts legacy JSON responses", async () => {
   const client = createNonaClient("https://nona.test", {
     apiKey: "api-key",
-    fetch: async () => jsonResponse({ value: "enabled", contentType: "string" })
+    fetch: async () => jsonResponse({ value: "enabled", contentType: "text" })
   });
 
   const value = await client.getConfigValue("production", "Features:Checkout");
 
   assert.equal(value.value, "enabled");
-  assert.equal(value.contentType, "string");
+  assert.equal(value.contentType, "text");
 });
 
 test("getConfigValue allows empty raw values", async () => {
   const client = createNonaClient("https://nona.test", {
     apiKey: "api-key",
-    fetch: async () => configValueResponse("", "string")
+    fetch: async () => configValueResponse("", "text")
   });
 
   const value = await client.getConfigValue("production", "Empty");
 
   assert.equal(value.value, "");
-  assert.equal(value.contentType, "string");
+  assert.equal(value.contentType, "text");
 });
 
 test("failed requests throw NonaClientError with backend error message", async () => {
@@ -64,7 +64,7 @@ test("failed requests throw NonaClientError with backend error message", async (
 
 test("missing apiKey throws before request execution", async () => {
   const client = createNonaClient("https://nona.test", {
-    fetch: async () => configValueResponse("enabled", "string")
+    fetch: async () => configValueResponse("enabled", "text")
   });
 
   await assert.rejects(
