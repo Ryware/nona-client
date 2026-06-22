@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -10,6 +11,7 @@ namespace Nona.Client;
 public sealed partial class NonaClient
 {
     private const string ApiKeyHeaderName = "X-Api-Key";
+    private const string ContentTypeHeaderName = "ContentType";
 
     private async Task<NonaConfigValue> FetchConfigValueAsync(
         string path,
@@ -38,38 +40,64 @@ public sealed partial class NonaClient
             ThrowResponseException(response, request, responseBody);
         }
 
-        if (string.IsNullOrWhiteSpace(responseBody))
+        var contentType = TryGetHeaderValue(response, ContentTypeHeaderName);
+        if (!string.IsNullOrWhiteSpace(contentType))
         {
-            throw new NonaClientException(
-                "Nona returned an empty response body.",
-                response.StatusCode,
-                method.Method,
-                request.RequestUri,
-                responseBody);
+            return new NonaConfigValue
+            {
+                Value = responseBody ?? string.Empty,
+                ContentType = contentType!
+            };
         }
 
-        try
+        if (!string.IsNullOrWhiteSpace(responseBody))
         {
-            return DeserializeConfigValue(responseBody!);
+            try
+            {
+                return DeserializeConfigValue(responseBody!);
+            }
+            catch (JsonException ex)
+            {
+                throw new NonaClientException(
+                    "Nona returned a response that could not be deserialized.",
+                    response.StatusCode,
+                    method.Method,
+                    request.RequestUri,
+                    responseBody,
+                    ex);
+            }
         }
-        catch (JsonException ex)
-        {
-            throw new NonaClientException(
-                "Nona returned a response that could not be deserialized.",
-                response.StatusCode,
-                method.Method,
-                request.RequestUri,
-                responseBody,
-                ex);
-        }
+
+        throw new NonaClientException(
+            $"Nona returned a successful response without a '{ContentTypeHeaderName}' header.",
+            response.StatusCode,
+            method.Method,
+            request.RequestUri,
+            responseBody);
     }
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
         var request = new HttpRequestMessage(method, BuildUri(path));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/plain"));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json", 0.5));
         ApplyApiKey(request);
         return request;
+    }
+
+    private static string? TryGetHeaderValue(HttpResponseMessage response, string name)
+    {
+        if (response.Headers.TryGetValues(name, out var headerValues))
+        {
+            return headerValues.FirstOrDefault();
+        }
+
+        if (response.Content?.Headers.TryGetValues(name, out var contentHeaderValues) == true)
+        {
+            return contentHeaderValues.FirstOrDefault();
+        }
+
+        return null;
     }
 
     private void ApplyApiKey(HttpRequestMessage request)

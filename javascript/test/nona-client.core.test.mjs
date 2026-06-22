@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createNonaClient, NonaClientError } from "../dist/index.js";
-import { capture, jsonResponse } from "./helpers.mjs";
+import { capture, configValueResponse, jsonResponse } from "./helpers.mjs";
 
 test("getConfigValue sends API key and parses the value", async () => {
   const calls = [];
@@ -9,7 +9,7 @@ test("getConfigValue sends API key and parses the value", async () => {
     apiKey: "api-key",
     fetch: async (url, init) => {
       calls.push(capture(url, init));
-      return jsonResponse({ value: "enabled", contentType: "string" });
+      return configValueResponse("enabled", "string");
     }
   });
 
@@ -19,6 +19,30 @@ test("getConfigValue sends API key and parses the value", async () => {
   assert.equal(value.contentType, "string");
   assert.equal(calls[0].url, "https://nona.test/api/production/Features%3ACheckout");
   assert.equal(calls[0].headers.get("X-Api-Key"), "api-key");
+});
+
+test("getConfigValue accepts legacy JSON responses", async () => {
+  const client = createNonaClient("https://nona.test", {
+    apiKey: "api-key",
+    fetch: async () => jsonResponse({ value: "enabled", contentType: "string" })
+  });
+
+  const value = await client.getConfigValue("production", "Features:Checkout");
+
+  assert.equal(value.value, "enabled");
+  assert.equal(value.contentType, "string");
+});
+
+test("getConfigValue allows empty raw values", async () => {
+  const client = createNonaClient("https://nona.test", {
+    apiKey: "api-key",
+    fetch: async () => configValueResponse("", "string")
+  });
+
+  const value = await client.getConfigValue("production", "Empty");
+
+  assert.equal(value.value, "");
+  assert.equal(value.contentType, "string");
 });
 
 test("failed requests throw NonaClientError with backend error message", async () => {
@@ -40,7 +64,7 @@ test("failed requests throw NonaClientError with backend error message", async (
 
 test("missing apiKey throws before request execution", async () => {
   const client = createNonaClient("https://nona.test", {
-    fetch: async () => jsonResponse({ value: "enabled", contentType: "string" })
+    fetch: async () => configValueResponse("enabled", "string")
   });
 
   await assert.rejects(

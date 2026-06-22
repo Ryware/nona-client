@@ -10,9 +10,7 @@ public sealed class NonaClientTests
     [Fact]
     public async Task GetConfigValueAsync_SendsApiKeyAndParsesValue()
     {
-        var handler = new StubHttpMessageHandler(_ => JsonResponse("""
-            {"value":"enabled","contentType":"string"}
-            """));
+        var handler = new StubHttpMessageHandler(_ => ConfigValueResponse("enabled", "string"));
 
         using var httpClient = new HttpClient(handler)
         {
@@ -60,9 +58,7 @@ public sealed class NonaClientTests
     [Fact]
     public async Task GetStringValueAsync_ReturnsRawConfigValue()
     {
-        var handler = new StubHttpMessageHandler(_ => JsonResponse("""
-            {"value":"enabled","contentType":"string"}
-            """));
+        var handler = new StubHttpMessageHandler(_ => ConfigValueResponse("enabled", "string"));
 
         using var httpClient = new HttpClient(handler)
         {
@@ -84,9 +80,7 @@ public sealed class NonaClientTests
         var handler = new StubHttpMessageHandler(_ =>
         {
             requestCount++;
-            return JsonResponse($$"""
-                {"value":"value-{{requestCount}}","contentType":"string"}
-                """);
+            return ConfigValueResponse($"value-{requestCount}", "string");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -117,9 +111,7 @@ public sealed class NonaClientTests
         {
             Interlocked.Increment(ref requestCount);
             await releaseResponse.Task;
-            return JsonResponse("""
-                {"value":"enabled","contentType":"string"}
-                """);
+            return ConfigValueResponse("enabled", "string");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -168,9 +160,7 @@ public sealed class NonaClientTests
             await releaseResponses.Task;
 
             var key = request.RequestUri?.Segments.Last().TrimEnd('/');
-            return JsonResponse($$"""
-                {"value":"{{key}}","contentType":"string"}
-                """);
+            return ConfigValueResponse(key ?? string.Empty, "string");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -207,9 +197,7 @@ public sealed class NonaClientTests
         var handler = new StubHttpMessageHandler(_ =>
         {
             requestCount++;
-            return JsonResponse($$"""
-                {"value":"value-{{requestCount}}","contentType":"string"}
-                """);
+            return ConfigValueResponse($"value-{requestCount}", "string");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -237,9 +225,7 @@ public sealed class NonaClientTests
         var handler = new StubHttpMessageHandler(_ =>
         {
             requestCount++;
-            return JsonResponse($$"""
-                {"value":"value-{{requestCount}}","contentType":"string"}
-                """);
+            return ConfigValueResponse($"value-{requestCount}", "string");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -271,9 +257,7 @@ public sealed class NonaClientTests
         var handler = new StubHttpMessageHandler(request =>
         {
             var key = request.RequestUri?.Segments.Last().TrimEnd('/');
-            return JsonResponse($$"""
-                {"value":"{{key}}-{{largeValue}}","contentType":"string"}
-                """);
+            return ConfigValueResponse($"{key}-{largeValue}", "string");
         });
 
         using var httpClient = new HttpClient(handler)
@@ -298,9 +282,7 @@ public sealed class NonaClientTests
     [Fact]
     public async Task GetJsonValueAsync_DeserializesConfigValue()
     {
-        var handler = new StubHttpMessageHandler(_ => JsonResponse("""
-            {"value":"{\"enabled\":true}","contentType":"json"}
-            """));
+        var handler = new StubHttpMessageHandler(_ => ConfigValueResponse("""{"enabled":true}""", "json"));
 
         using var httpClient = new HttpClient(handler)
         {
@@ -319,6 +301,50 @@ public sealed class NonaClientTests
 
         Assert.NotNull(value);
         Assert.True(value.Enabled);
+    }
+
+    [Fact]
+    public async Task GetConfigValueAsync_CanReadLegacyJsonResponse()
+    {
+        var handler = new StubHttpMessageHandler(_ => JsonResponse("""
+            {"value":"enabled","contentType":"string"}
+            """));
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://nona.test/")
+        };
+
+        using var client = new NonaClient(httpClient, new NonaClientOptions
+        {
+            ApiKey = "api-key"
+        });
+
+        var value = await client.GetConfigValueAsync("production", "flag");
+
+        Assert.Equal("enabled", value.Value);
+        Assert.Equal("string", value.ContentType);
+    }
+
+    [Fact]
+    public async Task GetConfigValueAsync_AllowsEmptyRawValue()
+    {
+        var handler = new StubHttpMessageHandler(_ => ConfigValueResponse(string.Empty, "string"));
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://nona.test/")
+        };
+
+        using var client = new NonaClient(httpClient, new NonaClientOptions
+        {
+            ApiKey = "api-key"
+        });
+
+        var value = await client.GetConfigValueAsync("production", "empty");
+
+        Assert.Equal(string.Empty, value.Value);
+        Assert.Equal("string", value.ContentType);
     }
 
     [Fact]
@@ -351,6 +377,16 @@ public sealed class NonaClientTests
         {
             Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
         };
+    }
+
+    private static HttpResponseMessage ConfigValueResponse(string value, string contentType, HttpStatusCode statusCode = HttpStatusCode.OK)
+    {
+        var response = new HttpResponseMessage(statusCode)
+        {
+            Content = new StringContent(value, System.Text.Encoding.UTF8, "text/plain")
+        };
+        response.Headers.TryAddWithoutValidation("ContentType", contentType);
+        return response;
     }
 
     private static async Task WaitForAsync(Func<bool> condition)

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createNonaClient } from "../dist/index.js";
-import { jsonResponse, wait } from "./helpers.mjs";
+import { configValueResponse, wait } from "./helpers.mjs";
 
 test("ttl cache is disabled by default", async () => {
   let calls = 0;
@@ -9,7 +9,7 @@ test("ttl cache is disabled by default", async () => {
     apiKey: "api-key",
     fetch: async () => {
       calls += 1;
-      return jsonResponse({ value: "v1", contentType: "string" });
+      return configValueResponse("v1", "string");
     }
   });
 
@@ -26,7 +26,7 @@ test("ttl cache hit returns from memory when enabled", async () => {
     cacheTtlMs: 5000,
     fetch: async () => {
       calls += 1;
-      return jsonResponse({ value: "v1", contentType: "string" });
+      return configValueResponse("v1", "string");
     }
   });
 
@@ -43,7 +43,7 @@ test("expired ttl cache performs a new network request", async () => {
     cacheTtlMs: 5,
     fetch: async () => {
       calls += 1;
-      return jsonResponse({ value: `v${calls}`, contentType: "string" });
+      return configValueResponse(`v${calls}`, "string");
     }
   });
 
@@ -63,7 +63,7 @@ test("targeted cache invalidation removes only matching entry", async () => {
     cacheTtlMs: 5000,
     fetch: async (url) => {
       calls += 1;
-      return jsonResponse({ value: String(url), contentType: "string" });
+      return configValueResponse(String(url), "string");
     }
   });
 
@@ -87,7 +87,7 @@ test("clear cache removes all ttl entries", async () => {
     cacheTtlMs: 5000,
     fetch: async (url) => {
       calls += 1;
-      return jsonResponse({ value: String(url), contentType: "string" });
+      return configValueResponse(String(url), "string");
     }
   });
 

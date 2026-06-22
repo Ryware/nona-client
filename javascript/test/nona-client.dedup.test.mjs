@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createNonaClient } from "../dist/index.js";
-import { deferred, isNonaError, jsonResponse } from "./helpers.mjs";
+import { configValueResponse, deferred, isNonaError, jsonResponse } from "./helpers.mjs";
 
 test("three concurrent identical requests deduplicate to one HTTP call", async () => {
   const pending = deferred();
@@ -20,7 +20,7 @@ test("three concurrent identical requests deduplicate to one HTTP call", async (
 
   assert.equal(calls, 1);
 
-  pending.resolve(jsonResponse({ value: "v1", contentType: "string" }));
+  pending.resolve(configValueResponse("v1", "string"));
 
   const [ra, rb, rc] = await Promise.all([a, b, c]);
   assert.equal(ra.value, "v1");
@@ -34,7 +34,7 @@ test("three concurrent different requests result in three HTTP calls", async () 
     apiKey: "api-key",
     fetch: async (url) => {
       calls += 1;
-      return jsonResponse({ value: String(url), contentType: "string" });
+      return configValueResponse(String(url), "string");
     }
   });
 
@@ -83,7 +83,7 @@ test("failed request cleanup allows subsequent retries", async () => {
         return jsonResponse({ error: "boom" }, 500);
       }
 
-      return jsonResponse({ value: "ok", contentType: "string" });
+      return configValueResponse("ok", "string");
     }
   });
 

@@ -5,7 +5,7 @@ import {
   ensureTrailingSlash,
   segment,
 } from "./request-helpers.js";
-import { readJsonResponse } from "./response-helpers.js";
+import { readConfigValueResponse } from "./response-helpers.js";
 import { TtlCache } from "./ttl-cache.js";
 import type {
   NonaClientOptions,
@@ -74,15 +74,15 @@ export function createNonaClient(
     throw new Error("createNonaClient requires a fetch implementation.");
   }
 
-  async function send<T>(request: SendOptions): Promise<T> {
+  async function sendConfigValue(request: SendOptions): Promise<NonaConfigValue> {
     const response = await sendRequest(request);
-    return readJsonResponse<T>(response, request.method, response.url);
+    return readConfigValueResponse(response, request.method, response.url);
   }
 
   async function sendRequest(request: SendOptions): Promise<Response> {
     const url = new URL(request.path.replace(/^\/+/, ""), baseUrl).toString();
     const headers = new Headers(defaultHeaders);
-    headers.set("Accept", "application/json");
+    headers.set("Accept", "text/plain, application/json;q=0.5");
     applyAuthentication(headers, apiKey);
 
     let body: string | undefined;
@@ -122,7 +122,7 @@ export function createNonaClient(
         return pending;
       }
 
-      const inFlight = send<NonaConfigValue>(request)
+      const inFlight = sendConfigValue(request)
         .then((response) => {
           cache.set(id, response);
           return response;
