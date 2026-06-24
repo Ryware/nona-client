@@ -6,13 +6,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <PackageId>Nona.Client</PackageId>
-    <Version>0.2.1</Version>
+    <Version>0.2.2</Version>
     <Authors>Nona</Authors>
     <Company>Nona</Company>
     <Title>Nona Client</Title>
     <Description>Official .NET client for Nona — an open-source, self-hosted remote configuration and feature flag service (a Firebase Remote Config alternative). Read config values and feature flags at runtime with a single typed call.</Description>
     <PackageTags>nona;remote-config;feature-flags;feature-toggles;self-hosted;firebase-remote-config;firebase-alternative;configuration;config;client;sdk</PackageTags>
     <PackageProjectUrl>https://nonaconfig.com</PackageProjectUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/Ryware/nona-config</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
