@@ -1,6 +1,6 @@
 {
   "name": "nona-client",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Typed JavaScript/TypeScript client for Nona — open-source, self-hosted remote config and feature flags (a Firebase Remote Config alternative).",
   "repository": {
     "type": "git",
