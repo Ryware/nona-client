@@ -20,7 +20,6 @@ interface SendOptions extends NonaRequestOptions {
 }
 
 export interface NonaClient {
-  apiKey?: string;
   getConfigValue(
     environmentId: string,
     key: string,
@@ -68,7 +67,7 @@ export function createNonaClient(
     memoryLimitMegabytes: resolvedOptions.cacheMemoryLimitMegabytes,
   });
   const pendingRequests = new Map<string, Promise<NonaConfigValue>>();
-  let apiKey = resolvedOptions.apiKey;
+  const apiKey = resolvedOptions.apiKey;
 
   if (!fetchImpl) {
     throw new Error("createNonaClient requires a fetch implementation.");
