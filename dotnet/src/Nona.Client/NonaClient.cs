@@ -15,8 +15,8 @@ public sealed partial class NonaClient : IDisposable
     private readonly bool _disposeHttpClient;
     private readonly NonaClientOptions _options;
     private readonly object _cacheLock = new object();
-    private readonly Dictionary<string, CacheEntry> _cache = new Dictionary<string, CacheEntry>(StringComparer.Ordinal);
-    private readonly Dictionary<string, Task<NonaConfigValue>> _inFlightFetches = new Dictionary<string, Task<NonaConfigValue>>(StringComparer.Ordinal);
+    private readonly Dictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Task<NonaConfigValue>> _inFlightFetches = new(StringComparer.Ordinal);
     private readonly TimeSpan _cacheTtl;
     private readonly long _cacheMemoryLimitBytes;
     private readonly bool _allowStaleCache;

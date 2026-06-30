@@ -14,7 +14,7 @@ namespace Nona.Client;
 public sealed class NonaOpenFeatureProvider : FeatureProvider
 {
     private const string DefaultProviderName = "nona";
-    private static readonly ImmutableMetadata EmptyMetadata = new ImmutableMetadata();
+    private static readonly ImmutableMetadata EmptyMetadata = new();
 
     private readonly NonaClient _client;
     private readonly string _environmentId;
