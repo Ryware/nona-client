@@ -1,5 +1,7 @@
 # Nona Client SDKs
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Ryware/nona-client/badge)](https://scorecard.dev/viewer/?uri=github.com/Ryware/nona-client)
+
 Client SDK implementations for Nona configuration.
 
 Official website:
