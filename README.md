@@ -21,3 +21,7 @@ Original Nona repository:
 
 - `javascript`: JavaScript SDK package
 - `dotnet`: .NET SDK solution and tests
+
+---
+
+Built by [Ryware.dev](https://ryware.dev)
